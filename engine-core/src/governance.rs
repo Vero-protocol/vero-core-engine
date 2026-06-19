@@ -5,13 +5,13 @@
 //! full approval and execution, giving stakeholders a veto window.
 //!
 //! ## Proposal State Machine
-//! ```
-//! Pending ─ (on approve, threshold met) → Approved ─ (on execute, timelock elapsed) → Executed
+//! ```text
+//! Pending -> (on approve, threshold met) -> Approved -> (on execute, timelock elapsed) -> Executed
 //! ```
 //! Invalid transitions trigger contract panics.
 
 use soroban_sdk::{
-    contracttype, panic_with_error, symbol_short, vec, Address, Env, Map, Symbol, Vec,
+    contracterror, panic_with_error, symbol_short, vec, Address, Env, Map, Symbol, Vec,
 };
 
 use crate::types::{Proposal, ProposalState};
@@ -19,11 +19,13 @@ use crate::types::{Proposal, ProposalState};
 const KEY_PROPOSALS: Symbol = symbol_short!("PROPS");
 const KEY_SIGNERS:   Symbol = symbol_short!("SIGNERS");
 const KEY_THRESH:    Symbol = symbol_short!("THRESH");
+const KEY_NEXT_ID:   Symbol = symbol_short!("NEXT_ID");
 /// Ledgers to wait after full approval before execution (~1 hour on Stellar).
 const TIMELOCK_LEDGERS: u32 = 720;
 
-#[contracttype]
-#[derive(Copy, Clone)]
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum GovError {
     NotASigner         = 1,
     AlreadyApproved    = 2,
@@ -35,9 +37,10 @@ pub enum GovError {
 
 /// Initialise governance with an ordered signer set and approval threshold.
 pub fn init(env: &Env, signers: Vec<Address>, threshold: u32) {
-    assert!(threshold as usize <= signers.len(), "threshold > signer count");
+    assert!(threshold <= signers.len(), "threshold > signer count");
     env.storage().instance().set(&KEY_SIGNERS, &signers);
     env.storage().instance().set(&KEY_THRESH, &threshold);
+    env.storage().instance().set(&KEY_NEXT_ID, &1u64);
     let empty: Map<u64, (Proposal, u32)> = Map::new(env);
     env.storage().instance().set(&KEY_PROPOSALS, &empty);
 }
@@ -52,6 +55,11 @@ pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
     if !signers.contains(&proposal.proposer) {
         panic_with_error!(env, GovError::NotASigner);
     }
+
+    let id: u64 = env.storage().instance().get(&KEY_NEXT_ID).unwrap_or(1);
+    proposal.id = id;
+    env.storage().instance().set(&KEY_NEXT_ID, &(id + 1));
+
     // Initialize state to Pending
     proposal.state = ProposalState::Pending;
     
@@ -130,4 +138,3 @@ pub fn execute(env: &Env, proposal_id: u64) -> Proposal {
     );
     prop
 }
-

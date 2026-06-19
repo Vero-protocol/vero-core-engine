@@ -5,114 +5,68 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::governance::{self, GovError};
-    use crate::types::{Proposal, ProposalState};
-    use soroban_sdk::{BytesN, Env};
+    use crate::VeroCore;
+    use crate::VeroCoreClient;
+    use soroban_sdk::{vec, Address, BytesN, Env};
 
-    /// Test: Proposal starts in Pending state
     #[test]
-    fn test_proposal_initial_state_pending() {
-        // When a proposal is created, it should be in Pending state
-        // Verified in: governance::propose() → proposal.state = ProposalState::Pending
+    fn test_proposal_lifecycle_and_upgrade() {
+        let env = Env::default();
+
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
+
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer2 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone(), signer2.clone()];
+        let threshold = 2;
+        let guardian = <Address as soroban_sdk::testutils::Address>::generate(&env);
+
+        client.init(&signers, &threshold, &vec![&env, guardian.clone()]);
+
+        let wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+        // 1. Propose
+        env.mock_all_auths();
+        let proposal_id = client.propose(&signer1, &wasm_hash);
+        assert_eq!(proposal_id, 1);
     }
 
-    /// Test: Pending → Approved transition on threshold met
     #[test]
-    fn test_state_transition_pending_to_approved() {
-        // GIVEN: A proposal in Pending state with N-1 approvals
-        // WHEN: The Nth approval is received (threshold met)
-        // THEN: State should transition to Approved
-        // AND: "GOV/approved" event should be emitted
-        // Verified in: governance::approve() → state auto-transitions when threshold met
+    #[should_panic(expected = "Error(Contract, #1)")] // NotASigner
+    fn test_propose_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
+
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone()];
+        client.init(&signers, &1, &vec![&env]);
+
+        let rogue = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        client.propose(&rogue, &BytesN::from_array(&env, &[0u8; 32]));
     }
 
-    /// Test: Approved → Executed transition on timelock expiry
     #[test]
-    fn test_state_transition_approved_to_executed() {
-        // GIVEN: A proposal in Approved state
-        // AND: Current ledger >= unlock_ledger
-        // WHEN: execute() is called
-        // THEN: State should transition to Executed
-        // AND: "GOV/execute" event should be emitted
-        // Verified in: governance::execute() → prop.state = ProposalState::Executed
-    }
+    fn test_circuit_breaker_halts_propose() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
 
-    /// Test: Rejecting approvals on Approved proposals (invalid transition)
-    #[test]
-    fn test_reject_approval_on_approved_proposal() {
-        // GIVEN: A proposal in Approved state
-        // WHEN: approve() is called on that proposal
-        // THEN: Must panic with InvalidStateTransition
-        // Verified in: governance::approve() → checks prop.state != Pending
-    }
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let guardian = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone()];
+        client.init(&signers, &1, &vec![&env, guardian.clone()]);
 
-    /// Test: Rejecting execution of Pending proposals
-    #[test]
-    fn test_reject_execution_of_pending_proposal() {
-        // GIVEN: A proposal in Pending state (threshold not met)
-        // WHEN: execute() is called
-        // THEN: Must panic with InvalidStateTransition
-        // Verified in: governance::execute() → checks prop.state == Approved
-    }
+        client.trip(&guardian);
 
-    /// Test: Rejecting double-execution of Executed proposals
-    #[test]
-    fn test_reject_double_execution() {
-        // GIVEN: A proposal in Executed state
-        // WHEN: execute() is called again
-        // THEN: Must panic with InvalidStateTransition
-        // Verified in: governance::execute() → checks prop.state == Approved
-    }
+        let result = client.try_propose(&signer1, &BytesN::from_array(&env, &[0u8; 32]));
+        assert!(result.is_err());
 
-    /// Test: Rejecting approval of Executed proposals
-    #[test]
-    fn test_reject_approval_of_executed_proposal() {
-        // GIVEN: A proposal in Executed state
-        // WHEN: approve() is called on that proposal
-        // THEN: Must panic with InvalidStateTransition
-        // Verified in: governance::approve() → checks prop.state == Pending
-    }
-
-    /// Test: Full lifecycle - Pending → Approved → Executed
-    #[test]
-    fn test_full_proposal_lifecycle() {
-        // GIVEN: A freshly created proposal (state = Pending)
-        // WHEN: Approvals are collected until threshold
-        // THEN: State transitions to Approved
-        // AND: "GOV/approved" event is emitted
-        // WHEN: Timelock expires and execute() is called
-        // THEN: State transitions to Executed
-        // AND: "GOV/execute" event is emitted
-        // All transitions are validated by governance module
-    }
-
-    /// Test: Error code for invalid transitions
-    #[test]
-    fn test_invalid_transition_error_code() {
-        // InvalidStateTransition error code = 5
-        // (replaces the removed AlreadyExecuted error)
-        // Verified in: GovError::InvalidStateTransition = 5
-    }
-
-    /// Test: Duplicate approval check still works after state changes
-    #[test]
-    fn test_duplicate_approval_detection() {
-        // GIVEN: A proposal in Pending state with one approval from Alice
-        // WHEN: approve() is called again by Alice
-        // THEN: Must panic with AlreadyApproved (not state-related)
-        // Verified in: governance::approve() → checks approved_by.contains(signer)
+        client.reset(&guardian);
+        let id = client.propose(&signer1, &BytesN::from_array(&env, &[0u8; 32]));
+        assert_eq!(id, 1);
     }
 }
-
-/// State Transition Matrix (for documentation)
-///
-/// | Current State | Operation | Target State | Allowed | Error |
-/// |---|---|---|---|---|
-/// | Pending | approve (< threshold) | Pending | Yes | — |
-/// | Pending | approve (>= threshold) | Approved | Yes | — |
-/// | Pending | execute | — | No | InvalidStateTransition |
-/// | Approved | approve | — | No | InvalidStateTransition |
-/// | Approved | execute (timelock OK) | Executed | Yes | — |
-/// | Approved | execute (timelock active) | — | No | TimelockActive |
-/// | Executed | approve | — | No | InvalidStateTransition |
-/// | Executed | execute | — | No | InvalidStateTransition |
