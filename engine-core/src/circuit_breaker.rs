@@ -85,21 +85,37 @@ mod tests {
     use super::*;
     use soroban_sdk::{testutils::Address as _, vec, Env};
 
+    #[soroban_sdk::contract]
+    pub struct TestContract;
+
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
+
     #[test]
     fn trip_and_reset() {
         let env = Env::default();
         env.mock_all_auths();
         let g = Address::generate(&env);
-        init(&env, vec![&env, g.clone()]);
+        let contract_id = env.register_contract(None, TestContract);
 
-        assert_closed(&env); // should not panic
-        trip(&env, &g);
+        // Init and verify closed
+        env.as_contract(&contract_id, || {
+            init(&env, vec![&env, g.clone()]);
+            assert_closed(&env); // should not panic
+        });
 
-        let state: BreakerState = env.storage().instance().get(&KEY_STATE).unwrap();
-        assert_eq!(state, BreakerState::Open);
+        // Trip the breaker
+        env.as_contract(&contract_id, || {
+            trip(&env, &g);
+            let state: BreakerState = env.storage().instance().get(&KEY_STATE).unwrap();
+            assert_eq!(state, BreakerState::Open);
+        });
 
-        reset(&env, &g);
-        assert_closed(&env); // back to closed — no panic
+        // Reset the breaker
+        env.as_contract(&contract_id, || {
+            reset(&env, &g);
+            assert_closed(&env); // back to closed — no panic
+        });
     }
 
     #[test]
@@ -109,7 +125,10 @@ mod tests {
         env.mock_all_auths();
         let g = Address::generate(&env);
         let rogue = Address::generate(&env);
-        init(&env, vec![&env, g.clone()]);
-        trip(&env, &rogue);
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            init(&env, vec![&env, g.clone()]);
+            trip(&env, &rogue);
+        });
     }
 }

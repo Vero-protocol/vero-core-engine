@@ -66,6 +66,12 @@ mod tests {
     use super::*;
     use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
+    #[soroban_sdk::contract]
+    pub struct TestContract;
+
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
+
     #[test]
     fn valid_first_commitment() {
         let env = Env::default();
@@ -78,7 +84,10 @@ mod tests {
             ledger:     100,
             author:     Address::generate(&env),
         };
-        validate_transition(&env, &c, payload); // must not panic
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            validate_transition(&env, &c, payload); // must not panic
+        });
     }
 
     #[test]
@@ -93,7 +102,10 @@ mod tests {
             ledger:     100,
             author:     Address::generate(&env),
         };
-        validate_transition(&env, &c, payload);
-        validate_transition(&env, &c, payload); // second call must panic
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            validate_transition(&env, &c, payload);
+            validate_transition(&env, &c, payload); // second call must panic
+        });
     }
 }

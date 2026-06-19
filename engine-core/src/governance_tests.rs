@@ -77,6 +77,30 @@ mod tests {
     // ── anti-Sybil stake gate ─────────────────────────────────────────────
 
     #[test]
+    fn test_state_transition_approved_to_executed() {
+        let env = setup_env();
+        let s1 = Address::generate(&env);
+        let signers = vec![&env, s1.clone()];
+        let weights = vec![&env, 100];
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            governance::init(&env, signers, weights, 10000); // 100.00% threshold
+
+            let p = Proposal {
+                id: 1,
+                action_hash: BytesN::from_array(&env, &[0u8; 32]),
+                proposer: s1.clone(),
+                approved_by: vec![&env],
+                state: ProposalState::Pending,
+            };
+            governance::propose(&env, p);
+
+            governance::approve(&env, &s1, 1);
+
+            // Advance ledger to trigger timelock expiry (unlock = start + 720)
+            env.ledger().set_sequence_number(800);
+            let executed_prop = governance::execute(&env, 1);
+            assert_eq!(executed_prop.state, ProposalState::Executed);
     fn test_approve_passes_with_sufficient_stake() {
         let env = Env::default();
         env.mock_all_auths();
