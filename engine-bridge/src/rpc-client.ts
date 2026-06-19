@@ -7,6 +7,7 @@
  */
 
 import { SorobanRpc } from "@stellar/stellar-sdk";
+import { logger } from "./logger";
 
 const QUARANTINE_MS = 30_000;
 const MAX_RETRIES   = 3;
@@ -39,7 +40,7 @@ export class RpcClient {
       } catch (err) {
         lastError = err;
         ep.deadUntil = Date.now() + QUARANTINE_MS;
-        console.warn(`[RpcClient] ${ep.url} quarantined — ${(err as Error).message}`);
+        logger.warn(`[RpcClient] ${ep.url} quarantined — ${(err as Error).message}`);
       }
     }
 

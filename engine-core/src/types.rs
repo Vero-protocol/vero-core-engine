@@ -14,6 +14,29 @@ pub struct StateCommitment {
     pub author:     Address,
 }
 
+/// Treasury snapshot for audit history — captures state at point in time.
+/// Recorded after every state-changing operation (deposit, withdrawal, governance action).
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct TreasurySnapshot {
+    /// Unique snapshot ID (incremental, monotonic)
+    pub id: u64,
+    /// Total treasury balance at snapshot time
+    pub total_balance: i128,
+    /// Number of accounts in treasury
+    pub account_count: u32,
+    /// Ledger sequence at snapshot time
+    pub ledger: u32,
+    /// Timestamp (ISO 8601 string)
+    pub timestamp: soroban_sdk::String,
+    /// Hash of snapshot data (SHA-256, 32 bytes) for integrity verification
+    pub state_hash: BytesN<32>,
+    /// Operation that triggered snapshot (e.g., "deposit", "withdrawal", "proposal_executed")
+    pub triggered_by: soroban_sdk::String,
+    /// Optional context data (e.g., {"proposal_id": "42", "amount": "1000"})
+    pub context: soroban_sdk::Map<soroban_sdk::Symbol, soroban_sdk::Val>,
+}
+
 /// Proposal state machine for multi-sig governance.
 /// Valid transitions: Pending → Approved → Executed
 #[contracttype]

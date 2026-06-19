@@ -112,6 +112,7 @@ health() {
   check "engine-bridge/src/rpc-client.ts exists"  test -f "$BRIDGE/src/rpc-client.ts"
   check "engine-bridge/src/nonce-manager.ts exists" test -f "$BRIDGE/src/nonce-manager.ts"
   check "engine-bridge/src/event-propagator.ts exists" test -f "$BRIDGE/src/event-propagator.ts"
+  check "engine-bridge/src/heartbeat-monitor.ts exists" test -f "$BRIDGE/src/heartbeat-monitor.ts"
   check "SECURITY.md exists"                       test -f "$ROOT/SECURITY.md"
   check ".github/ISSUE_TEMPLATE/feature_request.md exists" \
         test -f "$ROOT/.github/ISSUE_TEMPLATE/feature_request.md"

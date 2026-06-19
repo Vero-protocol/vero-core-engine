@@ -9,6 +9,7 @@
 
 import { RpcClient } from "./rpc-client";
 import { EventQueue } from "./event-queue";
+import { logger } from "./logger";
 
 export interface EngineEvent {
   id:          string;
@@ -65,7 +66,7 @@ export class EventPropagator {
    */
   private poll(): void {
     this.fetchAndEnqueue()
-      .catch(err => console.error("[EventPropagator] poll error:", err))
+      .catch(err => logger.error("[EventPropagator] poll error:", err))
       .finally(() => {
         if (this.running) {
           this.pollTimer = setTimeout(() => this.poll(), POLL_INTERVAL_MS);
@@ -78,7 +79,7 @@ export class EventPropagator {
    */
   private processQueue(): void {
     this.handleQueuedEvents()
-      .catch(err => console.error("[EventPropagator] process queue error:", err))
+      .catch(err => logger.error("[EventPropagator] process queue error:", err))
       .finally(() => {
         if (this.running) {
           this.processTimer = setTimeout(() => this.processQueue(), PROCESS_INTERVAL_MS);
@@ -112,7 +113,7 @@ export class EventPropagator {
       // Enqueue event for processing by handlers
       const enqueued = this.queue.enqueue(event);
       if (!enqueued) {
-        console.warn("[EventPropagator] Failed to enqueue event:", event.id);
+        logger.warn("[EventPropagator] Failed to enqueue event:", { eventId: event.id });
       }
 
       // Update cursor after successful enqueue (not after handler processing)
@@ -145,7 +146,7 @@ export class EventPropagator {
         this.queue.markProcessed(queued.id);
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
-        console.error(`[EventPropagator] Handler error for event ${queued.id}:`, error);
+        logger.error(`[EventPropagator] Handler error for event ${queued.id}:`, error);
         this.queue.markFailed(queued.id, error);
       }
     }
@@ -164,7 +165,7 @@ export class EventPropagator {
   /** Recovery: process any pending events from previous run. */
   async recoverPendingEvents(): Promise<void> {
     const pending = this.queue.recoverPending();
-    console.log(`[EventPropagator] Recovering ${pending.length} pending events`);
+    logger.info(`[EventPropagator] Recovering ${pending.length} pending events`);
 
     for (const queued of pending) {
       try {
@@ -181,7 +182,7 @@ export class EventPropagator {
         this.queue.markProcessed(queued.id);
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
-        console.error(`[EventPropagator] Recovery handler error for event ${queued.id}:`, error);
+        logger.error(`[EventPropagator] Recovery handler error for event ${queued.id}:`, error);
         this.queue.markFailed(queued.id, error);
       }
     }
