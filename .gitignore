@@ -1,0 +1,12 @@
+# Rust
+target/
+
+# Node
+node_modules/
+engine-bridge/dist/
+
+# Secrets
+.env
+
+# OS
+.DS_Store
