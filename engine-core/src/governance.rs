@@ -19,6 +19,7 @@ use crate::circuit_breaker;
 
 const KEY_PROPOSALS:  Symbol = symbol_short!("PROPS");
 const KEY_SIGNERS:    Symbol = symbol_short!("SIGNERS");
+const KEY_SIGNER_MAP: Symbol = symbol_short!("SIGNMAP");
 const KEY_THRESH:     Symbol = symbol_short!("THRESH");
 const KEY_MIN_STAKE:  Symbol = symbol_short!("MINSTAKE");
 const KEY_STAKE_TOK:  Symbol = symbol_short!("STKTOK");
@@ -52,6 +53,16 @@ pub fn init(
 ) {
     assert!(threshold <= signers.len(), "threshold > signer count");
     env.storage().instance().set(&KEY_SIGNERS, &signers);
+    // Build a map index for O(1) signer membership checks
+    let mut signers_map: Map<Address, bool> = Map::new(env);
+    let len = signers.len();
+    let mut i = 0usize;
+    while i < len {
+        let a = signers.get(i).unwrap();
+        signers_map.set(a, true);
+        i += 1;
+    }
+    env.storage().instance().set(&KEY_SIGNER_MAP, &signers_map);
     env.storage().instance().set(&KEY_THRESH, &threshold);
     env.storage().instance().set(&KEY_STAKE_TOK, &stake_token);
     env.storage().instance().set(&KEY_MIN_STAKE, &min_stake);
@@ -66,8 +77,13 @@ fn load_proposals(env: &Env) -> Map<u64, (Proposal, u32)> {
 /// Submit a new proposal. Returns the assigned proposal id.
 pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
     circuit_breaker::assert_closed(env);
-    let signers: Vec<Address> = env.storage().instance().get(&KEY_SIGNERS).unwrap_or(vec![env]);
-    if !signers.contains(&proposal.proposer) {
+    // Prefer indexed signer lookup when available to avoid O(n) scans
+    let signer_map: Map<Address, bool> = env
+        .storage()
+        .instance()
+        .get(&KEY_SIGNER_MAP)
+        .unwrap_or(Map::new(env));
+    if !signer_map.get(&proposal.proposer).unwrap_or(false) {
         panic_with_error!(env, GovError::NotASigner);
     }
     // Initialize state to Pending
@@ -90,8 +106,13 @@ pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
 pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {
     circuit_breaker::assert_closed(env);
     signer.require_auth();
-    let signers: Vec<Address> = env.storage().instance().get(&KEY_SIGNERS).unwrap_or(vec![env]);
-    if !signers.contains(signer) {
+    // Prefer indexed signer lookup when available to avoid O(n) scans
+    let signer_map: Map<Address, bool> = env
+        .storage()
+        .instance()
+        .get(&KEY_SIGNER_MAP)
+        .unwrap_or(Map::new(env));
+    if !signer_map.get(signer).unwrap_or(false) {
         panic_with_error!(env, GovError::NotASigner);
     }
 

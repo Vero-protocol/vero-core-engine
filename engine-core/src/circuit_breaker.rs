@@ -3,12 +3,13 @@
 //! Only authorised guardians may open or close the breaker.
 //! All stateful entry-points must call `assert_closed` before proceeding.
 
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec, Map};
 
 use crate::types::BreakerState;
 
 const KEY_STATE:    Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
+const KEY_GUARDIAN_MAP: Symbol = symbol_short!("CB_GUARD_MAP");
 
 #[contracterror]
 #[derive(Copy, Clone)]
@@ -21,6 +22,16 @@ pub enum BreakerError {
 pub fn init(env: &Env, guardians: Vec<Address>) {
     env.storage().instance().set(&KEY_STATE, &BreakerState::Closed);
     env.storage().instance().set(&KEY_GUARDIAN, &guardians);
+    // Build a Map index for guardian membership checks to avoid linear scans
+    let mut guard_map: Map<Address, bool> = Map::new(env);
+    let len = guardians.len();
+    let mut i = 0usize;
+    while i < len {
+        let a = guardians.get(i).unwrap();
+        guard_map.set(a, true);
+        i += 1;
+    }
+    env.storage().instance().set(&KEY_GUARDIAN_MAP, &guard_map);
 }
 
 /// Panics with `BreakerError::CircuitOpen` when the breaker is tripped.
@@ -70,12 +81,13 @@ fn set_state(env: &Env, state: BreakerState) {
 }
 
 fn require_guardian(env: &Env, caller: &Address) {
-    let guardians: Vec<Address> = env
+    // Prefer indexed guardian lookup when available to avoid O(n) scans
+    let guard_map: Map<Address, bool> = env
         .storage()
         .instance()
-        .get(&KEY_GUARDIAN)
-        .unwrap_or(vec![env]);
-    if !guardians.contains(caller) {
+        .get(&KEY_GUARDIAN_MAP)
+        .unwrap_or(Map::new(env));
+    if !guard_map.get(caller).unwrap_or(false) {
         panic_with_error!(env, BreakerError::NotGuardian);
     }
 }

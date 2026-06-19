@@ -23,7 +23,9 @@ const MAX_RETRIES = 3;
 
 export interface QueuedEvent {
   id: string;
-  eventData: EngineEvent;
+  // `eventData` may be the parsed `EngineEvent` for single dequeue operations,
+  // or a raw JSON string when recovered in bulk to avoid eager parsing cost.
+  eventData: EngineEvent | string;
   status: "pending" | "processing" | "processed" | "failed";
   attempts: number;
   enqueueTime: number;
@@ -102,6 +104,37 @@ export class EventQueue {
   }
 
   /**
+   * Enqueue many events in a single transaction. Returns number of events inserted.
+   */
+  enqueueMany(events: EngineEvent[]): number {
+    if (!events || events.length === 0) return 0;
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO events (id, eventData, status, attempts, enqueueTime)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+
+      const insertMany = this.db.transaction((evs: EngineEvent[]) => {
+        for (const event of evs) {
+          stmt.run(
+            event.id,
+            JSON.stringify(event),
+            "pending",
+            0,
+            Date.now()
+          );
+        }
+      });
+
+      insertMany(events);
+      return events.length;
+    } catch (err) {
+      logger.error("[EventQueue] enqueueMany failed:", err);
+      return 0;
+    }
+  }
+
+  /**
    * Dequeue a pending event for processing. Transitions to 'processing' state.
    * Returns the event or null if none available.
    */
@@ -127,6 +160,7 @@ export class EventQueue {
 
       return {
         id: row.id,
+        // For single dequeue we parse eagerly since it's going to be processed immediately
         eventData: JSON.parse(row.eventData),
         status: "processing",
         attempts: row.attempts + 1,
@@ -200,9 +234,10 @@ export class EventQueue {
       `);
 
       const rows = stmt.all(this.maxRetries) as any[];
+      // Return raw JSON for eventData to avoid parsing large result sets eagerly.
       return rows.map(row => ({
         id: row.id,
-        eventData: JSON.parse(row.eventData),
+        eventData: row.eventData,
         status: row.status,
         attempts: row.attempts,
         enqueueTime: row.enqueueTime,

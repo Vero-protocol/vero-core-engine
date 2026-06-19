@@ -100,6 +100,7 @@ export class EventPropagator {
       })
     );
 
+    const toEnqueue: EngineEvent[] = [];
     for (const raw of result.events) {
       const event: EngineEvent = {
         id:         raw.id,
@@ -109,15 +110,16 @@ export class EventPropagator {
         ledger:     raw.ledger,
         timestamp:  raw.ledgerClosedAt,
       };
+      toEnqueue.push(event);
+    }
 
-      // Enqueue event for processing by handlers
-      const enqueued = this.queue.enqueue(event);
-      if (!enqueued) {
-        logger.warn("[EventPropagator] Failed to enqueue event:", { eventId: event.id });
+    if (toEnqueue.length > 0) {
+      const inserted = this.queue.enqueueMany(toEnqueue);
+      if (inserted < toEnqueue.length) {
+        logger.warn("[EventPropagator] Some events failed to enqueue", { requested: toEnqueue.length, inserted });
       }
-
-      // Update cursor after successful enqueue (not after handler processing)
-      this.cursor = raw.id;
+      // Advance cursor to last event in the batch
+      this.cursor = result.events[result.events.length - 1].id;
     }
   }
 
@@ -132,8 +134,13 @@ export class EventPropagator {
 
       try {
         // Call all handlers in parallel, with error isolation
+        // Lazily parse eventData if it's a raw JSON string (recovered in bulk)
+        const eventObj = typeof queued.eventData === "string"
+          ? JSON.parse(queued.eventData)
+          : queued.eventData;
+
         const results = await Promise.allSettled(
-          this.handlers.map(h => h(queued.eventData))
+          this.handlers.map(h => h(eventObj as EngineEvent))
         );
 
         // Check if any handler failed
@@ -169,8 +176,12 @@ export class EventPropagator {
 
     for (const queued of pending) {
       try {
+        const eventObj = typeof queued.eventData === "string"
+          ? JSON.parse(queued.eventData)
+          : queued.eventData;
+
         const results = await Promise.allSettled(
-          this.handlers.map(h => h(queued.eventData))
+          this.handlers.map(h => h(eventObj as EngineEvent))
         );
 
         const failed = results.some(r => r.status === "rejected");
