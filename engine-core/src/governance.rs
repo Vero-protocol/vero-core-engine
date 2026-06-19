@@ -11,22 +11,22 @@
 //! Invalid transitions trigger contract panics.
 
 use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, vec, Address, Env, Map, Symbol, Vec,
+    contracterror, panic_with_error, symbol_short, token, vec, Address, Env, Map, Symbol, Vec,
 };
 
 use crate::types::{Proposal, ProposalState};
 
-const KEY_PROPOSALS: Symbol = symbol_short!("PROPS");
-const KEY_SIGNERS:   Symbol = symbol_short!("SIGNERS");
-const KEY_WEIGHTS:   Symbol = symbol_short!("WEIGHTS");
-const KEY_THRESH:    Symbol = symbol_short!("THRESH");
+const KEY_PROPOSALS:  Symbol = symbol_short!("PROPS");
+const KEY_SIGNERS:    Symbol = symbol_short!("SIGNERS");
+const KEY_THRESH:     Symbol = symbol_short!("THRESH");
+const KEY_MIN_STAKE:  Symbol = symbol_short!("MINSTAKE");
+const KEY_STAKE_TOK:  Symbol = symbol_short!("STKTOK");
 /// Ledgers to wait after full approval before execution (~1 hour on Stellar).
 const TIMELOCK_LEDGERS: u32 = 720;
 const SCALING_FACTOR: u64 = 10_000;
 
 #[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum GovError {
     NotASigner             = 1,
     AlreadyApproved        = 2,
@@ -34,31 +34,28 @@ pub enum GovError {
     TimelockActive         = 4,
     InvalidStateTransition = 5,
     ProposalNotFound       = 6,
-    WeightsLengthMismatch  = 7,
-    InvalidThreshold       = 8,
-    InvalidWeight          = 9,
+    InsufficientStake      = 7,
 }
 
-/// Initialise governance with an ordered signer set, corresponding weights, and approval threshold.
-pub fn init(env: &Env, signers: Vec<Address>, weights: Vec<u32>, threshold: u32) {
-    if signers.len() != weights.len() {
-        panic_with_error!(env, GovError::WeightsLengthMismatch);
-    }
-    if signers.len() == 0 {
-        panic_with_error!(env, GovError::WeightsLengthMismatch);
-    }
-    if threshold == 0 || threshold > (SCALING_FACTOR as u32) {
-        panic_with_error!(env, GovError::InvalidThreshold);
-    }
-    for i in 0..weights.len() {
-        let w = weights.get(i).unwrap();
-        if w == 0 {
-            panic_with_error!(env, GovError::InvalidWeight);
-        }
-    }
+/// Initialise governance with an ordered signer set, approval threshold, and
+/// anti-Sybil stake parameters.
+///
+/// * `stake_token`  – SAC/token contract address whose balance is checked at vote time.
+/// * `min_stake`    – Minimum balance (in token's smallest unit) a signer must hold to vote.
+///                    Pass `0` to disable the stake gate.
+pub fn init(
+    env: &Env,
+    signers: Vec<Address>,
+    threshold: u32,
+    stake_token: Address,
+    min_stake: i128,
+) {
+    assert!(threshold <= signers.len(), "threshold > signer count");
     env.storage().instance().set(&KEY_SIGNERS, &signers);
     env.storage().instance().set(&KEY_WEIGHTS, &weights);
     env.storage().instance().set(&KEY_THRESH, &threshold);
+    env.storage().instance().set(&KEY_STAKE_TOK, &stake_token);
+    env.storage().instance().set(&KEY_MIN_STAKE, &min_stake);
     let empty: Map<u64, (Proposal, u32)> = Map::new(env);
     env.storage().instance().set(&KEY_PROPOSALS, &empty);
 }
@@ -88,6 +85,7 @@ pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
 }
 
 /// Record a signer's approval for `proposal_id`.
+/// The signer must hold at least `min_stake` tokens to prevent Sybil voting.
 /// Transitions state from Pending → Approved when threshold is met.
 pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {
     signer.require_auth();
@@ -95,10 +93,19 @@ pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {
     if !signers.contains(signer) {
         panic_with_error!(env, GovError::NotASigner);
     }
-    let weights: Vec<u32> = env.storage().instance().get(&KEY_WEIGHTS).unwrap_or(vec![env]);
-    let threshold: u32 = env.storage().instance().get(&KEY_THRESH).unwrap_or(10_000);
+
+    // Anti-Sybil: verify the signer holds the required stake at vote time.
+    let min_stake: i128 = env.storage().instance().get(&KEY_MIN_STAKE).unwrap_or(0);
+    if min_stake > 0 {
+        let stake_token: Address = env.storage().instance().get(&KEY_STAKE_TOK).unwrap();
+        let balance = token::Client::new(env, &stake_token).balance(signer);
+        if balance < min_stake {
+            panic_with_error!(env, GovError::InsufficientStake);
+        }
+    }
 
     let mut props = load_proposals(env);
+    let threshold: u32 = env.storage().instance().get(&KEY_THRESH).unwrap_or(1);
     let (mut prop, unlock) = props.get(proposal_id).unwrap_or_else(|| {
         panic_with_error!(env, GovError::ProposalNotFound)
     });

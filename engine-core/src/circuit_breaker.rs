@@ -11,8 +11,7 @@ const KEY_STATE:    Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
 
 #[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum BreakerError {
     CircuitOpen      = 1,
     NotGuardian      = 2,

@@ -16,6 +16,7 @@ import Database from "better-sqlite3";
 import { EngineEvent } from "./event-propagator";
 import * as fs from "fs";
 import * as path from "path";
+import { logger } from "./logger";
 
 const DEFAULT_DB_PATH = path.join(process.cwd(), "event-queue.db");
 const MAX_RETRIES = 3;
@@ -95,7 +96,7 @@ export class EventQueue {
 
       return true;
     } catch (err) {
-      console.error("[EventQueue] Enqueue failed:", err);
+      logger.error("[EventQueue] Enqueue failed:", err);
       return false;
     }
   }
@@ -134,7 +135,7 @@ export class EventQueue {
         error: row.error,
       };
     } catch (err) {
-      console.error("[EventQueue] Dequeue failed:", err);
+      logger.error("[EventQueue] Dequeue failed:", err);
       return null;
     }
   }
@@ -152,7 +153,7 @@ export class EventQueue {
       stmt.run(Date.now(), eventId);
       return true;
     } catch (err) {
-      console.error("[EventQueue] Mark processed failed:", err);
+      logger.error("[EventQueue] Mark processed failed:", err);
       return false;
     }
   }
@@ -181,7 +182,7 @@ export class EventQueue {
 
       return true;
     } catch (err) {
-      console.error("[EventQueue] Mark failed failed:", err);
+      logger.error("[EventQueue] Mark failed failed:", err);
       return false;
     }
   }
@@ -209,7 +210,7 @@ export class EventQueue {
         error: row.error,
       }));
     } catch (err) {
-      console.error("[EventQueue] Recover pending failed:", err);
+      logger.error("[EventQueue] Recover pending failed:", err);
       return [];
     }
   }
@@ -253,7 +254,7 @@ export class EventQueue {
         oldestEventAge,
       };
     } catch (err) {
-      console.error("[EventQueue] Get stats failed:", err);
+      logger.error("[EventQueue] Get stats failed:", err);
       return {
         total: 0,
         pending: 0,
@@ -279,7 +280,7 @@ export class EventQueue {
       const result = stmt.run(cutoff);
       return result.changes;
     } catch (err) {
-      console.error("[EventQueue] Cleanup failed:", err);
+      logger.error("[EventQueue] Cleanup failed:", err);
       return 0;
     }
   }

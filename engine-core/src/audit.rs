@@ -13,8 +13,7 @@ const KEY_SEQ:  Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
 
 #[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum AuditError {
     ReplayedSequence  = 1,
     HashMismatch      = 2,
