@@ -15,6 +15,7 @@ const MAX_RETRIES   = 3;
 interface Endpoint {
   url:          string;
   deadUntil:    number;  // epoch ms; 0 = healthy
+  lastError?:    string | null;
 }
 
 export class RpcClient {
@@ -39,12 +40,46 @@ export class RpcClient {
         return await fn(server);
       } catch (err) {
         lastError = err;
+        const msg = (err as Error).message;
         ep.deadUntil = Date.now() + QUARANTINE_MS;
-        logger.warn(`[RpcClient] ${ep.url} quarantined — ${(err as Error).message}`);
+        ep.lastError = msg;
+        logger.warn(`[RpcClient] ${ep.url} quarantined — ${msg}`);
       }
     }
 
     throw lastError;
+  }
+
+  /**
+   * Probe a single endpoint immediately. Returns true if the endpoint responds.
+   * Useful for external health checks to attempt re-admission of quarantined nodes.
+   */
+  async probeEndpoint(url: string): Promise<boolean> {
+    const ep = this.endpoints.find(e => e.url === url);
+    if (!ep) return false;
+
+    try {
+      const server = new SorobanRpc.Server(ep.url, { allowHttp: ep.url.startsWith("http://") });
+      // Lightweight probe: fetch latest ledger
+      await server.getLatestLedger();
+      ep.deadUntil = 0;
+      ep.lastError = null;
+      logger.info(`[RpcClient] ${ep.url} probe success — marked healthy`);
+      return true;
+    } catch (err) {
+      const msg = (err as Error).message;
+      ep.deadUntil = Date.now() + QUARANTINE_MS;
+      ep.lastError = msg;
+      logger.warn(`[RpcClient] ${ep.url} probe failed — ${msg}`);
+      return false;
+    }
+  }
+
+  /** Return a snapshot of endpoint statuses for monitoring. */
+  getStatuses(): Array<{ url: string; healthy: boolean; deadUntil: number; lastError: string | null }>
+  {
+    const now = Date.now();
+    return this.endpoints.map(ep => ({ url: ep.url, healthy: ep.deadUntil <= now, deadUntil: ep.deadUntil, lastError: ep.lastError ?? null }));
   }
 
   private pickEndpoint(): Endpoint | null {

@@ -61,6 +61,7 @@ export class HeartbeatMonitor {
       rpc: {
         liveNodes: this.rpc.liveCount(),
         error:     rpcError,
+        endpoints: this.rpc.getStatuses(),
       },
       eventPropagator: {
         running: this.propagator.isRunning(),
