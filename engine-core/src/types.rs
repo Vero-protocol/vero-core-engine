@@ -18,6 +18,7 @@ pub enum ProposalState {
     Pending = 0,
     Approved = 1,
     Executed = 2,
+    Expired = 3,
 }
 
 #[contracttype]
@@ -42,4 +43,5 @@ pub struct Proposal {
     pub action_hash: soroban_sdk::BytesN<32>,
     pub approved_by: soroban_sdk::Vec<soroban_sdk::Address>,
     pub state: u32, 
+    pub voting_deadline: u32, // Absolute ledger sequence where voting window closes
 }

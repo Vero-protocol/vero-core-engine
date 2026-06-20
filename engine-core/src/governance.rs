@@ -12,6 +12,7 @@ impl Governance {
         env: Env,
         proposer: Address,
         action_hash: BytesN<32>,
+        duration_ledgers: u32,
     ) -> u64 {
         proposer.require_auth();
 
@@ -23,12 +24,17 @@ const KEY_STAKE_TOK:  Symbol = symbol_short!("STKTOK");
 /// Ledgers to wait after full approval before execution (~1 hour on Stellar).
 const TIMELOCK_LEDGERS: u32 = 720;
 
+        // Calculate absolute ledger expiration height
+        let current_ledger = env.ledger().sequence();
+        let voting_deadline = current_ledger + duration_ledgers;
+
         let proposal = Proposal {
             id: next_id,
             proposer,
             action_hash,
             approved_by: Vec::new(&env),
             state: 0, 
+            voting_deadline,
         };
 
 /// Initialise governance with an ordered signer set, approval threshold, and
