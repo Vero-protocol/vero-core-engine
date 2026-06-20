@@ -78,29 +78,48 @@ mod tests {
 
     #[test]
     fn test_state_transition_approved_to_executed() {
-        let env = setup_env();
+        let env = Env::default();
+        env.mock_all_auths();
         let s1 = Address::generate(&env);
-        let signers = vec![&env, s1.clone()];
-        let weights = vec![&env, 100];
-        let contract_id = env.register_contract(None, TestContract);
-        env.as_contract(&contract_id, || {
-            governance::init(&env, signers, weights, 10000); // 100.00% threshold
+        let (cid, _) = init_one(&env, &s1, 0);
 
-            let p = Proposal {
-                id: 1,
-                action_hash: BytesN::from_array(&env, &[0u8; 32]),
-                proposer: s1.clone(),
-                approved_by: vec![&env],
-                state: ProposalState::Pending,
-            };
-            governance::propose(&env, p);
-
-            governance::approve(&env, &s1, 1);
-
-            // Advance ledger to trigger timelock expiry (unlock = start + 720)
-            env.ledger().set_sequence_number(800);
-            let executed_prop = governance::execute(&env, 1);
+        env.as_contract(&cid, || {
+            let id = governance::propose(&env, make_proposal(&env, 1, &s1));
+            governance::approve(&env, &s1, id);
+            env.ledger().with_mut(|l| l.sequence_number += 721);
+            let executed_prop = governance::execute(&env, id);
             assert_eq!(executed_prop.state, ProposalState::Executed);
+        });
+    }
+
+    #[test]
+    fn test_auto_execute_on_approve_after_timelock() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let s1 = Address::generate(&env);
+        let (cid, _) = init_one(&env, &s1, 0);
+
+        env.as_contract(&cid, || {
+            let id = governance::propose(&env, make_proposal(&env, 2, &s1));
+            // Advance ledger past the unlock before approving so approve() should
+            // auto-execute when threshold is met.
+            env.ledger().with_mut(|l| l.sequence_number += 2000);
+            governance::approve(&env, &s1, id);
+
+            let state = env
+                .storage()
+                .instance()
+                .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(&soroban_sdk::symbol_short!("PROPS"))
+                .unwrap()
+                .get(id)
+                .unwrap()
+                .0
+                .state;
+            assert_eq!(state, ProposalState::Executed);
+        });
+    }
+
+    #[test]
     fn test_approve_passes_with_sufficient_stake() {
         let env = Env::default();
         env.mock_all_auths();

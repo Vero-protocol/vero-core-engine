@@ -29,6 +29,8 @@ export interface QueuedEvent {
   enqueueTime: number;
   processTime?: number;
   error?: string;
+  /** Timestamp when the event becomes eligible for the next attempt (ms since epoch) */
+  nextAttempt?: number;
 }
 
 export class EventQueue {
@@ -52,6 +54,7 @@ export class EventQueue {
    *   enqueueTime (INT) - Milliseconds since epoch
    *   processTime (INT) - Milliseconds since epoch (nullable)
    *   error (TEXT)      - Last error message (nullable)
+   *   nextAttempt (INT) - Next time eligible for retry
    */
   private initializeDatabase(): Database.Database {
     const db = new Database(this.dbPath);
@@ -59,19 +62,21 @@ export class EventQueue {
     db.pragma("synchronous = NORMAL");
 
     db.exec(`
-      CREATE TABLE IF NOT EXISTS events (
-        id TEXT PRIMARY KEY,
-        eventData TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        attempts INT NOT NULL DEFAULT 0,
-        enqueueTime INT NOT NULL,
-        processTime INT,
-        error TEXT
-      );
+        CREATE TABLE IF NOT EXISTS events (
+          id TEXT PRIMARY KEY,
+          eventData TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          attempts INT NOT NULL DEFAULT 0,
+          enqueueTime INT NOT NULL,
+          processTime INT,
+          error TEXT,
+          nextAttempt INT NOT NULL DEFAULT 0
+        );
 
-      CREATE INDEX IF NOT EXISTS idx_status ON events(status);
-      CREATE INDEX IF NOT EXISTS idx_enqueueTime ON events(enqueueTime);
-    `);
+        CREATE INDEX IF NOT EXISTS idx_status ON events(status);
+        CREATE INDEX IF NOT EXISTS idx_enqueueTime ON events(enqueueTime);
+        CREATE INDEX IF NOT EXISTS idx_nextAttempt ON events(nextAttempt);
+      `);
 
     return db;
   }
@@ -81,9 +86,10 @@ export class EventQueue {
    */
   enqueue(event: EngineEvent): boolean {
     try {
+      const now = Date.now();
       const stmt = this.db.prepare(`
-        INSERT INTO events (id, eventData, status, attempts, enqueueTime)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO events (id, eventData, status, attempts, enqueueTime, nextAttempt)
+        VALUES (?, ?, ?, ?, ?, ?)
       `);
 
       stmt.run(
@@ -91,7 +97,8 @@ export class EventQueue {
         JSON.stringify(event),
         "pending",
         0,
-        Date.now()
+        now,
+        now
       );
 
       return true;
@@ -107,14 +114,16 @@ export class EventQueue {
    */
   dequeue(): QueuedEvent | null {
     try {
+      const now = Date.now();
       const stmt = this.db.prepare(`
         SELECT * FROM events
-        WHERE status = 'pending' OR (status = 'failed' AND attempts < ?)
+        WHERE (status = 'pending' OR (status = 'failed' AND attempts < ?))
+          AND nextAttempt <= ?
         ORDER BY enqueueTime ASC
         LIMIT 1
       `);
 
-      const row = stmt.get(this.maxRetries) as any;
+      const row = stmt.get(this.maxRetries, now) as any;
       if (!row) return null;
 
       // Transition to processing
@@ -164,7 +173,7 @@ export class EventQueue {
    */
   markFailed(eventId: string, error: Error): boolean {
     try {
-      // Get current attempt count
+      // Get current attempt count and nextAttempt
       const getStmt = this.db.prepare("SELECT attempts FROM events WHERE id = ?");
       const row = getStmt.get(eventId) as any;
 
@@ -173,12 +182,16 @@ export class EventQueue {
       const hasMoreRetries = row.attempts < this.maxRetries;
       const newStatus = hasMoreRetries ? "pending" : "failed";
 
+      // Compute exponential backoff delay (in ms) based on next attempt count
+      const delayMs = hasMoreRetries ? Math.pow(2, row.attempts) * 1000 : 0; // attempts already incremented in dequeue
+      const nextAttempt = Date.now() + delayMs;
+
       const stmt = this.db.prepare(`
         UPDATE events
-        SET status = ?, error = ?
+        SET status = ?, error = ?, nextAttempt = ?
         WHERE id = ?
       `);
-      stmt.run(newStatus, error.message, eventId);
+      stmt.run(newStatus, error.message, nextAttempt, eventId);
 
       return true;
     } catch (err) {

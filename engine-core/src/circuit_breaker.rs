@@ -3,7 +3,7 @@
 //! Only authorised guardians may open or close the breaker.
 //! All stateful entry-points must call `assert_closed` before proceeding.
 
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec, BytesN, Map, Val};
 
 use crate::types::BreakerState;
 
@@ -44,6 +44,10 @@ pub fn trip(env: &Env, guardian: &Address) {
         (symbol_short!("CB"), symbol_short!("tripped")),
         guardian.clone(),
     );
+    // Emit structured Event for circuit breaker trip
+    let mut payload = Map::new(env);
+    payload.set(Symbol::short("guardian"), guardian.clone().into());
+    publish_event(env, BytesN::from_array(env, & [0u8; 32]), BytesN::from_array(env, & [0u8; 32]), payload);
 }
 
 /// Reset the breaker — resumes normal operation. Requires guardian auth.
@@ -55,6 +59,10 @@ pub fn reset(env: &Env, guardian: &Address) {
         (symbol_short!("CB"), symbol_short!("reset")),
         guardian.clone(),
     );
+    // Emit structured Event for circuit breaker reset
+    let mut payload = Map::new(env);
+    payload.set(Symbol::short("guardian"), guardian.clone().into());
+    publish_event(env, BytesN::from_array(env, & [0u8; 32]), BytesN::from_array(env, & [0u8; 32]), payload);
 }
 
 fn set_state(env: &Env, state: BreakerState) {
