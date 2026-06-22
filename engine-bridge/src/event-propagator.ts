@@ -162,6 +162,11 @@ export class EventPropagator {
     return this.cursor;
   }
 
+  /** Check if the event propagator is currently running. */
+  isRunning(): boolean {
+    return this.running;
+  }
+
   /** Recovery: process any pending events from previous run. */
   async recoverPendingEvents(): Promise<void> {
     const pending = this.queue.recoverPending();

@@ -5,6 +5,7 @@ import {
   Operation,
   Transaction,
   TransactionBuilder,
+  SorobanRpc,
 } from "@stellar/stellar-sdk";
 import { GasOracle, FeeResolutionOptions, ResolvedFee } from "./gas-oracle";
 import { NonceManager } from "./nonce-manager";
@@ -86,13 +87,14 @@ export class TxAggregator {
     try {
       const feePlan = await this.plan(operations, feeOptions);
       const source = new Account(sourceAccountId, String(sequence - 1n));
+      const baseFeePerOp = Math.ceil(Number(feePlan.totalMaxFee) / operations.length);
       const builder = new TransactionBuilder(source, {
-        fee: feePlan.totalMaxFee,
+        fee: String(baseFeePerOp),
         networkPassphrase: this.networkPassphrase,
       });
 
       for (const operation of operations) {
-        builder.addOperation(operation);
+        builder.addOperation(operation as any);
       }
 
       if (memo) {
@@ -111,6 +113,46 @@ export class TxAggregator {
     } catch (error) {
       this.nonceManager.release(sourceAccountId, sequence);
       throw error;
+    }
+  }
+
+  /**
+   * Submits a transaction to the network and polls for its status until it is
+   * successful, failed, or a timeout is reached.
+   */
+  async execute(
+    transaction: Transaction,
+    opts: { pollIntervalMs?: number; timeoutMs?: number } = {},
+  ): Promise<SorobanRpc.Api.GetTransactionResponse> {
+    const pollIntervalMs = opts.pollIntervalMs ?? 1000;
+    const timeoutMs = opts.timeoutMs ?? 30000;
+    const startTime = Date.now();
+    const hash = transaction.hash().toString("hex");
+
+    const sendResponse = await this.rpc.call(async (server) => {
+      return await server.sendTransaction(transaction);
+    });
+
+    if (sendResponse.status === "ERROR") {
+      throw new Error(`TxAggregator: sendTransaction failed with status ERROR: ${(sendResponse as any).errorResultXdr || "No error result XDR"}`);
+    }
+
+    while (true) {
+      if (Date.now() - startTime > timeoutMs) {
+        throw new Error(`TxAggregator: transaction execution timed out after ${timeoutMs}ms`);
+      }
+
+      const txResponse = await this.rpc.call(async (server) => {
+        return await server.getTransaction(hash);
+      });
+
+      if (txResponse.status === "SUCCESS") {
+        return txResponse;
+      } else if (txResponse.status === "FAILED") {
+        throw new Error(`TxAggregator: transaction failed with result: ${txResponse.resultXdr?.toString() || "Unknown error"}`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
   }
 }

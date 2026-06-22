@@ -19,6 +19,7 @@ pub enum ProposalState {
     Approved = 1,
     Executed = 2,
     Expired = 3,
+    Cancelled = 4,
 }
 
 #[contracttype]

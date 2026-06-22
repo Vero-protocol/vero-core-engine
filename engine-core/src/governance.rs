@@ -189,6 +189,58 @@ pub fn execute(env: &Env, proposal_id: u64) -> Proposal {
     prop
 }
 
+/// Cancel (roll back) a proposal that has not yet been executed.
+///
+/// Reverts the proposal to the terminal `Cancelled` state so it can no longer
+/// be approved or executed. Only a governance signer may cancel, and only while
+/// the proposal is still in a non-terminal state — an already executed proposal
+/// cannot be undone, and an already cancelled proposal cannot be cancelled again.
+pub fn cancel(env: &Env, caller: &Address, proposal_id: u64) -> Proposal {
+    caller.require_auth();
+    require_signer(env, caller);
+
+    let mut props: Map<u64, (Proposal, u32)> = env
+        .storage()
+        .instance()
+        .get(&KEY_PROPOSALS)
+        .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
+
+    let (mut prop, unlock) = props
+        .get(proposal_id)
+        .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
+
+    // An executed proposal is terminal and cannot be rolled back.
+    if prop.state == ProposalState::Executed {
+        panic_with_error!(env, GovError::AlreadyExecuted);
+    }
+
+    // Reject any other invalid transition (e.g. cancelling an already
+    // cancelled proposal).
+    if prop.state == ProposalState::Cancelled {
+        panic_with_error!(env, GovError::InvalidStateTransition);
+    }
+
+    prop.state = ProposalState::Cancelled;
+    props.set(proposal_id, (prop.clone(), unlock));
+    env.storage().instance().set(&KEY_PROPOSALS, &props);
+
+    env.events().publish(
+        (symbol_short!("GOV"), symbol_short!("cancel")),
+        proposal_id,
+    );
+
+    let mut payload = Map::new(env);
+    payload.set(Symbol::short("proposal_id"), proposal_id.into());
+    publish_event(
+        env,
+        BytesN::from_array(env, &[0u8; 32]),
+        BytesN::from_array(env, &[0u8; 32]),
+        payload,
+    );
+
+    prop
+}
+
 fn require_signer(env: &Env, voter: &Address) {
     let signers: Vec<Address> = env
         .storage()
