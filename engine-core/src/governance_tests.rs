@@ -10,7 +10,7 @@ mod tests {
         vec, Address, BytesN, Env,
     };
 
-    // ── minimal stub contract so we can call env.as_contract() ──────────────
+    // ── minimal stub contract ────────────────────────────────────────────────
 
     #[contract]
     struct GovContract;
@@ -42,16 +42,21 @@ mod tests {
     fn make_proposal(env: &Env, id: u64, proposer: &Address) -> Proposal {
         Proposal {
             id,
-            action_hash: dummy_hash(env),
-            proposer: proposer.clone(),
-            approved_by: vec![env],
-            state: ProposalState::Pending,
+            action_hash:  dummy_hash(env),
+            proposer:     proposer.clone(),
+            approved_by:  vec![env],
+            state:        ProposalState::Pending,
         }
     }
 
-    /// Init with one signer + optional stake gate. Returns (contract_id, token_address).
+    /// Read a proposal back from persistent storage using the hex-encoded key.
+    fn get_proposal(env: &Env, id: u64) -> (Proposal, u32) {
+        let key = Symbol::new(env, &format!("P{:x}", id));
+        env.storage().persistent().get(&key).unwrap()
+    }
+
     fn init_one(env: &Env, signer: &Address, min_stake: i128) -> (Address, Address) {
-        let cid = register_contract(env);
+        let cid   = register_contract(env);
         let token = register_token(env);
         env.as_contract(&cid, || {
             governance::init(env, vec![env, signer.clone()], 1, token.clone(), min_stake);
@@ -59,7 +64,6 @@ mod tests {
         (cid, token)
     }
 
-    /// Init with two signers, threshold=2, no stake gate. Returns contract_id.
     fn init_two(env: &Env, a: &Address, b: &Address) -> Address {
         let cid = register_contract(env);
         env.as_contract(&cid, || {
@@ -74,7 +78,7 @@ mod tests {
         cid
     }
 
-    // ── anti-Sybil stake gate ─────────────────────────────────────────────
+    // ── state transitions ─────────────────────────────────────────────────
 
     #[test]
     fn test_state_transition_approved_to_executed() {
@@ -101,23 +105,15 @@ mod tests {
 
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 2, &s1));
-            // Advance ledger past the unlock before approving so approve() should
-            // auto-execute when threshold is met.
             env.ledger().with_mut(|l| l.sequence_number += 2000);
             governance::approve(&env, &s1, id);
 
-            let state = env
-                .storage()
-                .instance()
-                .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(&soroban_sdk::symbol_short!("PROPS"))
-                .unwrap()
-                .get(id)
-                .unwrap()
-                .0
-                .state;
-            assert_eq!(state, ProposalState::Executed);
+            let (prop, _) = get_proposal(&env, id);
+            assert_eq!(prop.state, ProposalState::Executed);
         });
     }
+
+    // ── anti-Sybil stake gate ─────────────────────────────────────────────
 
     #[test]
     fn test_approve_passes_with_sufficient_stake() {
@@ -130,18 +126,8 @@ mod tests {
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 1, &signer));
             governance::approve(&env, &signer, id);
-            let state = env
-                .storage()
-                .instance()
-                .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(
-                    &soroban_sdk::symbol_short!("PROPS"),
-                )
-                .unwrap()
-                .get(id)
-                .unwrap()
-                .0
-                .state;
-            assert_eq!(state, ProposalState::Approved);
+            let (prop, _) = get_proposal(&env, id);
+            assert_eq!(prop.state, ProposalState::Approved);
         });
     }
 
@@ -152,11 +138,11 @@ mod tests {
         env.mock_all_auths();
         let signer = Address::generate(&env);
         let (cid, token) = init_one(&env, &signer, 1_000);
-        fund(&env, &token, &signer, 999); // one short
+        fund(&env, &token, &signer, 999);
 
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id); // InsufficientStake = 7
+            governance::approve(&env, &signer, id);
         });
     }
 
@@ -165,27 +151,17 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
         let signer = Address::generate(&env);
-        let (cid, _) = init_one(&env, &signer, 0); // no tokens needed
+        let (cid, _) = init_one(&env, &signer, 0);
 
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id); // must not panic
-            let state = env
-                .storage()
-                .instance()
-                .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(
-                    &soroban_sdk::symbol_short!("PROPS"),
-                )
-                .unwrap()
-                .get(id)
-                .unwrap()
-                .0
-                .state;
-            assert_eq!(state, ProposalState::Approved);
+            governance::approve(&env, &signer, id);
+            let (prop, _) = get_proposal(&env, id);
+            assert_eq!(prop.state, ProposalState::Approved);
         });
     }
 
-    // ── state machine ─────────────────────────────────────────────────────
+    // ── full lifecycle ────────────────────────────────────────────────────
 
     #[test]
     fn test_full_lifecycle() {
@@ -199,34 +175,10 @@ mod tests {
             let id = governance::propose(&env, make_proposal(&env, 1, &a));
 
             governance::approve(&env, &a, id);
-            assert_eq!(
-                env.storage()
-                    .instance()
-                    .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(
-                        &soroban_sdk::symbol_short!("PROPS"),
-                    )
-                    .unwrap()
-                    .get(id)
-                    .unwrap()
-                    .0
-                    .state,
-                ProposalState::Pending
-            );
+            assert_eq!(get_proposal(&env, id).0.state, ProposalState::Pending);
 
             governance::approve(&env, &b, id);
-            assert_eq!(
-                env.storage()
-                    .instance()
-                    .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(
-                        &soroban_sdk::symbol_short!("PROPS"),
-                    )
-                    .unwrap()
-                    .get(id)
-                    .unwrap()
-                    .0
-                    .state,
-                ProposalState::Approved
-            );
+            assert_eq!(get_proposal(&env, id).0.state, ProposalState::Approved);
 
             env.ledger().with_mut(|l| l.sequence_number += 721);
             let prop = governance::execute(&env, id);
@@ -244,7 +196,7 @@ mod tests {
 
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::execute(&env, id); // InvalidStateTransition = 5
+            governance::execute(&env, id);
         });
     }
 
@@ -258,18 +210,14 @@ mod tests {
 
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id); // → Approved
-            governance::execute(&env, id); // TimelockActive = 4
+            governance::approve(&env, &signer, id);
+            governance::execute(&env, id);
         });
     }
 
     #[test]
     #[should_panic]
     fn test_duplicate_approval_rejected() {
-        // The second approve by the same signer must panic. In the test environment
-        // mock_all_auths() consumes the auth token on the first call, so the second
-        // call raises Error(Auth, ExistingValue) before reaching AlreadyApproved — both
-        // are correct rejections of a duplicate approval attempt.
         let env = Env::default();
         env.mock_all_auths();
         let a = Address::generate(&env);
@@ -278,7 +226,7 @@ mod tests {
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 1, &a));
             governance::approve(&env, &a, id);
-            governance::approve(&env, &a, id); // must panic
+            governance::approve(&env, &a, id);
         });
     }
 
@@ -293,7 +241,7 @@ mod tests {
 
         env.as_contract(&cid, || {
             let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::approve(&env, &outsider, id); // NotASigner = 1
+            governance::approve(&env, &outsider, id);
         });
     }
 

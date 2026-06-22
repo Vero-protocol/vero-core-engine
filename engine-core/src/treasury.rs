@@ -1,43 +1,50 @@
 //! Treasury state snapshots for audit history.
 //!
-//! Records treasury state at critical points (deposits, withdrawals, governance actions)
-//! to enable audit trails and historical analysis. Snapshots are immutable once recorded.
+//! ## Storage layout (optimised)
 //!
-//! Storage Layout:
-//!   SNAP_COUNTER    → Current snapshot ID (incremental)
-//!   SNAP:<id>       → TreasurySnapshot indexed by ID
-//!   SNAP:LATEST     → Most recent snapshot ID
+//! | Key       | Storage     | Type             | Notes                          |
+//! |-----------|-------------|------------------|--------------------------------|
+//! | `SNAPC`   | instance    | `u64`            | monotonic snapshot counter     |
+//! | `SNAPL`   | instance    | `u64`            | id of most recent snapshot     |
+//! | `S{id}`   | temporary   | `TreasurySnapshot` | individual snapshot record   |
+//!
+//! Individual snapshot records are stored in **temporary** storage so they accrue
+//! no ledger-entry rent.  The counter and latest-id remain in instance storage
+//! because they are accessed on every write path.
 
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Bytes, Env, Map, String, Symbol, Vec, Val};
+use soroban_sdk::{contracterror, panic_with_error, BytesN, Bytes, Env, Map, Symbol, Val, Vec};
+use crate::event_struct::{MOD_TREASURY, ACT_SNAPSHOT};
 use crate::event_utils::publish_event;
 
-use crate::types::TreasurySnapshot;
+use crate::types::{TreasurySnapshot, TriggerKind, TreasuryError};
 
-const KEY_SNAP_COUNTER: Symbol = symbol_short!("SNAPC");
-const KEY_SNAP_LATEST:  Symbol = symbol_short!("SNAPL");
+const KEY_SNAP_COUNTER: Symbol = soroban_sdk::symbol_short!("SNAPC");
+const KEY_SNAP_LATEST:  Symbol = soroban_sdk::symbol_short!("SNAPL");
 
-#[contracterror]
-#[derive(Copy, Clone)]
-pub enum TreasuryError {
-    SnapshotNotFound = 1,
-    InvalidBalance   = 2,
-}
+/// Temporary storage TTL constants (ledgers).
+/// ~7 days at 5-second ledger time — sufficient for off-chain indexer pickup.
+const SNAP_TTL_THRESHOLD: u32 = 17_280;
+const SNAP_TTL_EXTEND_TO: u32 = 17_280 * 7;
 
 /// Initialize treasury snapshot system. Called once at contract deployment.
 pub fn init(env: &Env) {
     env.storage().instance().set(&KEY_SNAP_COUNTER, &0u64);
-    env.storage().instance().set(&KEY_SNAP_LATEST, &0u64);
+    env.storage().instance().set(&KEY_SNAP_LATEST,  &0u64);
 }
 
 /// Record a treasury snapshot. Called after state-changing operations.
 ///
 /// Returns the snapshot ID for reference.
+///
+/// `trigger` replaces the previous freeform `triggered_by: String` to eliminate
+/// heap-allocated Soroban Strings.  Pass an empty `Map::new(env)` for `context`
+/// when no extra metadata is needed.
 pub fn record_snapshot(
     env: &Env,
     total_balance: i128,
     account_count: u32,
-    triggered_by: String,
-    context: Map<Symbol, soroban_sdk::Val>,
+    trigger: TriggerKind,
+    context: Map<Symbol, Val>,
 ) -> u64 {
     if total_balance < 0 {
         panic_with_error!(env, TreasuryError::InvalidBalance);
@@ -48,36 +55,30 @@ pub fn record_snapshot(
 
     let state_hash = compute_hash(env, total_balance, account_count, env.ledger().sequence());
 
-    // Store ledger timestamp as u64; soroban_sdk::String is used for triggered_by label.
-    let ts_str = String::from_str(env, &format!("{}", env.ledger().timestamp()));
-
     let snapshot = TreasurySnapshot {
-        id: snapshot_id,
+        id:             snapshot_id,
         total_balance,
         account_count,
-        ledger: env.ledger().sequence(),
-        timestamp: ts_str,
-        state_hash,
-        triggered_by,
+        ledger:         env.ledger().sequence(),
+        timestamp_unix: env.ledger().timestamp(),
+        state_hash:     state_hash.clone(),
+        trigger,
         context,
     };
 
     let snapshot_key = make_snap_key(env, snapshot_id);
-    env.storage().instance().set(&snapshot_key, &snapshot);
-    env.storage().instance().set(&KEY_SNAP_COUNTER, &snapshot_id);
-    env.storage().instance().set(&KEY_SNAP_LATEST, &snapshot_id);
 
-    env.events().publish(
-        (symbol_short!("TRE"), symbol_short!("snapshot")),
-        snapshot_id,
-    );
-    // Emit structured Event for treasury snapshot
-    let mut payload = Map::new(env);
-    payload.set(Symbol::short("id"), snapshot_id.into());
-    payload.set(Symbol::short("balance"), total_balance.into());
-    payload.set(Symbol::short("accounts"), account_count.into());
-    payload.set(Symbol::short("ledger"), env.ledger().sequence().into());
-    publish_event(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
+    // Store in temporary storage — no rent accrual.
+    env.storage().temporary().set(&snapshot_key, &snapshot);
+    env.storage()
+        .temporary()
+        .extend_ttl(&snapshot_key, SNAP_TTL_THRESHOLD, SNAP_TTL_EXTEND_TO);
+
+    env.storage().instance().set(&KEY_SNAP_COUNTER, &snapshot_id);
+    env.storage().instance().set(&KEY_SNAP_LATEST,  &snapshot_id);
+
+    // Single compact event — snapshot id in value, state_hash in hash field.
+    publish_event(env, MOD_TREASURY | ACT_SNAPSHOT, snapshot_id, state_hash);
 
     snapshot_id
 }
@@ -85,7 +86,7 @@ pub fn record_snapshot(
 /// Retrieve a snapshot by ID.
 pub fn get_snapshot(env: &Env, snapshot_id: u64) -> Option<TreasurySnapshot> {
     let key = make_snap_key(env, snapshot_id);
-    env.storage().instance().get(&key)
+    env.storage().temporary().get(&key)
 }
 
 /// Get the most recent snapshot.
@@ -142,15 +143,13 @@ fn compute_hash(env: &Env, balance: i128, account_count: u32, ledger: u32) -> By
 }
 
 fn make_snap_key(env: &Env, id: u64) -> Symbol {
-    // Encode snapshot id into a short symbol: prefix "S" + id as decimal.
-    // Symbol is limited to 32 chars; u64 max is 20 digits, safe.
     Symbol::new(env, &format!("S{}", id))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, vec, Env, Map, String, Symbol};
+    use soroban_sdk::{Env, Map, Symbol};
 
     #[soroban_sdk::contract]
     pub struct TestContract;
@@ -164,8 +163,8 @@ mod tests {
         let contract_id = env.register_contract(None, TestContract);
         env.as_contract(&contract_id, || {
             init(&env);
-            let ctx: Map<Symbol, soroban_sdk::Val> = Map::new(&env);
-            let id = record_snapshot(&env, 1000, 5, String::from_str(&env, "deposit"), ctx);
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            let id = record_snapshot(&env, 1000, 5, TriggerKind::Deposit, ctx);
             assert_eq!(id, 1);
             let snap = get_snapshot(&env, 1).unwrap();
             assert_eq!(snap.total_balance, 1000);
@@ -180,8 +179,8 @@ mod tests {
         let contract_id = env.register_contract(None, TestContract);
         env.as_contract(&contract_id, || {
             init(&env);
-            let ctx: Map<Symbol, soroban_sdk::Val> = Map::new(&env);
-            record_snapshot(&env, 500, 2, String::from_str(&env, "withdrawal"), ctx);
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            record_snapshot(&env, 500, 2, TriggerKind::Withdrawal, ctx);
             let snap = get_snapshot(&env, 1).unwrap();
             assert!(verify_snapshot(&env, &snap));
         });
@@ -194,8 +193,8 @@ mod tests {
         let contract_id = env.register_contract(None, TestContract);
         env.as_contract(&contract_id, || {
             init(&env);
-            let ctx: Map<Symbol, soroban_sdk::Val> = Map::new(&env);
-            record_snapshot(&env, -1, 0, String::from_str(&env, "bad"), ctx);
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            record_snapshot(&env, -1, 0, TriggerKind::Other, ctx);
         });
     }
 }

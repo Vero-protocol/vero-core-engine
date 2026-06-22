@@ -1,16 +1,18 @@
 use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, Address, Env, Symbol,
+    contracterror, panic_with_error, symbol_short, token, Address, BytesN, Env, Symbol,
 };
+use crate::event_struct::{MOD_FEE, ACT_FEE};
+use crate::event_utils::publish_event;
 
-const KEY_FEE_BPS: Symbol = symbol_short!("FEE_BPS");
+const KEY_FEE_BPS:       Symbol = symbol_short!("FEE_BPS");
 const KEY_FEE_RECIPIENT: Symbol = symbol_short!("FEE_RCP");
 
 #[contracterror]
 #[derive(Copy, Clone)]
 pub enum FeeError {
-    InvalidBasisPoints = 1,
-    InvalidRecipient = 2,
-    FeeCalculationOverflow = 3,
+    InvalidBasisPoints      = 1,
+    InvalidRecipient        = 2,
+    FeeCalculationOverflow  = 3,
 }
 
 const MAX_BPS: u32 = 10000;
@@ -20,7 +22,7 @@ pub fn init(env: &Env, fee_bps: u32, recipient: &Address) {
         panic_with_error!(env, FeeError::InvalidBasisPoints);
     }
     validate_address(env, recipient);
-    env.storage().instance().set(&KEY_FEE_BPS, &fee_bps);
+    env.storage().instance().set(&KEY_FEE_BPS,       &fee_bps);
     env.storage().instance().set(&KEY_FEE_RECIPIENT, recipient);
 }
 
@@ -54,9 +56,12 @@ pub fn deduct_fee(env: &Env, token: &Address, amount: i128) -> i128 {
             &fee,
         );
 
-        env.events().publish(
-            (symbol_short!("FEE"), symbol_short!("deduct")),
-            (recipient, fee, net),
+        // Single compact event — fee amount in value field.
+        publish_event(
+            env,
+            MOD_FEE | ACT_FEE,
+            fee as u64,
+            BytesN::from_array(env, &[0u8; 32]),
         );
     }
     net

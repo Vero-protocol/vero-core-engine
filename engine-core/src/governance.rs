@@ -1,3 +1,20 @@
+//! Multi-sig governance with timelock.
+//!
+//! ## Storage layout (optimised)
+//!
+//! | Key          | Storage    | Type                    | Notes                        |
+//! |--------------|------------|-------------------------|------------------------------|
+//! | `SIGNERS`    | instance   | `Vec<Address>`          | signer set                   |
+//! | `THRESH`     | instance   | `u32`                   | approval threshold           |
+//! | `MINSTAKE`   | instance   | `i128`                  | optional min stake           |
+//! | `STKTOK`     | instance   | `Address`               | stake token contract         |
+//! | `P{id}`      | persistent | `(Proposal, u32)`       | per-proposal entry + unlock  |
+//!
+//! Moving from a single `Map<u64,(Proposal,u32)>` in instance storage to per-key
+//! persistent entries means each `approve`/`execute` call only deserialises the
+//! single proposal being acted on, not the entire proposal set.
+
+use crate::event_struct::{MOD_GOV, ACT_PROPOSE, ACT_APPROVE, ACT_EXECUTE};
 use crate::event_utils::publish_event;
 use crate::types::{Proposal, ProposalState};
 use soroban_sdk::{
@@ -5,23 +22,27 @@ use soroban_sdk::{
     Symbol, Val, Vec,
 };
 
-const KEY_PROPOSALS: Symbol = symbol_short!("PROPS");
-const KEY_SIGNERS: Symbol = symbol_short!("SIGNERS");
-const KEY_THRESH: Symbol = symbol_short!("THRESH");
+const KEY_SIGNERS:   Symbol = symbol_short!("SIGNERS");
+const KEY_THRESH:    Symbol = symbol_short!("THRESH");
 const KEY_MIN_STAKE: Symbol = symbol_short!("MINSTAKE");
 const KEY_STAKE_TOK: Symbol = symbol_short!("STKTOK");
+
+/// Persistent TTL constants (in ledgers).  ~30 days at 5-second ledger time.
+const PROPOSAL_TTL_THRESHOLD: u32 = 17_280;
+const PROPOSAL_TTL_EXTEND_TO: u32 = 17_280 * 30;
+
 const TIMELOCK_LEDGERS: u32 = 720;
 
 #[contracterror]
 #[derive(Copy, Clone)]
 pub enum GovError {
-    NotASigner = 1,
-    AlreadyApproved = 2,
-    ProposalNotFound = 3,
-    TimelockActive = 4,
-    InvalidStateTransition = 5,
-    AlreadyExecuted = 6,
-    InsufficientStake = 7,
+    NotASigner              = 1,
+    AlreadyApproved         = 2,
+    ProposalNotFound        = 3,
+    TimelockActive          = 4,
+    InvalidStateTransition  = 5,
+    AlreadyExecuted         = 6,
+    InsufficientStake       = 7,
 }
 
 pub fn init(
@@ -34,42 +55,29 @@ pub fn init(
     if threshold == 0 || threshold > signers.len() {
         panic_with_error!(env, GovError::NotASigner);
     }
-    env.storage().instance().set(&KEY_SIGNERS, &signers);
-    env.storage().instance().set(&KEY_THRESH, &threshold);
+    env.storage().instance().set(&KEY_SIGNERS,   &signers);
+    env.storage().instance().set(&KEY_THRESH,    &threshold);
     env.storage().instance().set(&KEY_STAKE_TOK, &stake_token);
     env.storage().instance().set(&KEY_MIN_STAKE, &min_stake);
-    let empty: Map<u64, (Proposal, u32)> = Map::new(env);
-    env.storage().instance().set(&KEY_PROPOSALS, &empty);
 }
 
 pub fn propose(env: &Env, proposal: Proposal) -> u64 {
-    let mut props: Map<u64, (Proposal, u32)> = env
-        .storage()
-        .instance()
-        .get(&KEY_PROPOSALS)
-        .unwrap_or(Map::new(env));
-
     let unlock_ledger = env.ledger().sequence() + TIMELOCK_LEDGERS;
     let id = proposal.id;
 
     let mut prop = proposal;
     prop.state = ProposalState::Pending;
 
-    props.set(id, (prop, unlock_ledger));
-    env.storage().instance().set(&KEY_PROPOSALS, &props);
+    let key = proposal_key(env, id);
+    env.storage().persistent().set(&key, &(prop, unlock_ledger));
+    extend_proposal_ttl(env, &key);
 
-    env.events().publish(
-        (symbol_short!("GOV"), symbol_short!("propose")),
-        id,
-    );
-
-    let mut payload = Map::new(env);
-    payload.set(Symbol::short("proposal_id"), id.into());
+    // Single compact event.
     publish_event(
         env,
+        MOD_GOV | ACT_PROPOSE,
+        id,
         BytesN::from_array(env, &[0u8; 32]),
-        BytesN::from_array(env, &[0u8; 32]),
-        payload,
     );
 
     id
@@ -80,14 +88,11 @@ pub fn approve(env: &Env, voter: &Address, proposal_id: u64) {
     require_signer(env, voter);
     require_min_stake(env, voter);
 
-    let mut props: Map<u64, (Proposal, u32)> = env
+    let key = proposal_key(env, proposal_id);
+    let (mut prop, unlock): (Proposal, u32) = env
         .storage()
-        .instance()
-        .get(&KEY_PROPOSALS)
-        .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
-
-    let (mut prop, unlock) = props
-        .get(proposal_id)
+        .persistent()
+        .get(&key)
         .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
 
     if prop.state != ProposalState::Pending {
@@ -126,23 +131,17 @@ pub fn approve(env: &Env, voter: &Address, proposal_id: u64) {
     if prop.approved_by.len() >= threshold {
         prop.state = ProposalState::Approved;
 
-        env.events().publish(
-            (symbol_short!("GOV"), symbol_short!("approved")),
-            proposal_id,
-        );
-
-        let mut payload = Map::new(env);
-        payload.set(Symbol::short("proposal_id"), proposal_id.into());
+        // Single compact event for approval.
         publish_event(
             env,
+            MOD_GOV | ACT_APPROVE,
+            proposal_id,
             BytesN::from_array(env, &[0u8; 32]),
-            BytesN::from_array(env, &[0u8; 32]),
-            payload,
         );
     }
 
-    props.set(proposal_id, (prop.clone(), unlock));
-    env.storage().instance().set(&KEY_PROPOSALS, &props);
+    env.storage().persistent().set(&key, &(prop.clone(), unlock));
+    extend_proposal_ttl(env, &key);
 
     if prop.state == ProposalState::Approved && env.ledger().sequence() >= unlock {
         execute(env, proposal_id);
@@ -150,14 +149,11 @@ pub fn approve(env: &Env, voter: &Address, proposal_id: u64) {
 }
 
 pub fn execute(env: &Env, proposal_id: u64) -> Proposal {
-    let mut props: Map<u64, (Proposal, u32)> = env
+    let key = proposal_key(env, proposal_id);
+    let (mut prop, unlock): (Proposal, u32) = env
         .storage()
-        .instance()
-        .get(&KEY_PROPOSALS)
-        .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
-
-    let (mut prop, unlock) = props
-        .get(proposal_id)
+        .persistent()
+        .get(&key)
         .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
 
     if prop.state != ProposalState::Approved {
@@ -169,21 +165,16 @@ pub fn execute(env: &Env, proposal_id: u64) -> Proposal {
     }
 
     prop.state = ProposalState::Executed;
-    props.set(proposal_id, (prop.clone(), unlock));
-    env.storage().instance().set(&KEY_PROPOSALS, &props);
+    env.storage().persistent().set(&key, &(prop.clone(), unlock));
+    // Extend TTL so the executed record remains accessible for the audit window.
+    extend_proposal_ttl(env, &key);
 
-    env.events().publish(
-        (symbol_short!("GOV"), symbol_short!("execute")),
-        proposal_id,
-    );
-
-    let mut payload = Map::new(env);
-    payload.set(Symbol::short("proposal_id"), proposal_id.into());
+    // Single compact event.
     publish_event(
         env,
-        BytesN::from_array(env, &[0u8; 32]),
-        BytesN::from_array(env, &[0u8; 32]),
-        payload,
+        MOD_GOV | ACT_EXECUTE,
+        proposal_id,
+        prop.action_hash.clone(),
     );
 
     prop

@@ -13,3 +13,5 @@ pub mod event_utils;
 
 #[cfg(test)]
 mod governance_tests;
+#[cfg(test)]
+mod treasury_tests;
