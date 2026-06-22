@@ -14,6 +14,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 import type { EventPropagator, EngineEvent } from "./event-propagator";
 import { RelayerAuth } from "./relayer-auth";
 import type { RelayerAuthOptions } from "./relayer-auth";
+import { WalletConnector } from "./wallet-connector";
 
 export interface ZkStateSnapshot {
   type:       "zk_state_update";
@@ -37,6 +38,9 @@ export interface ZkStateSyncerOptions {
   pingIntervalMs?: number;
   /** Optional relayer authentication config. */
   auth?:           RelayerAuthOptions;
+  serverSigningKey?: string;
+  networkPassphrase?: string;
+  domain?: string;
 }
 
 const DEFAULT_ZK_TOPIC     = "state_commitment";
