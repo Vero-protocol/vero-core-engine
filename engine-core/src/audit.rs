@@ -10,6 +10,7 @@ use crate::event_utils::publish_event;
 use sha2::{Digest, Sha256};
 
 use crate::types::StateCommitment;
+use crate::circuit_breaker::assert_closed;
 
 const KEY_SEQ:  Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -37,6 +38,7 @@ pub fn compute_commitment(prev_hash: &[u8; 32], sequence: u64, payload: &[u8]) -
 /// - `commitment.sequence` ≤ last recorded sequence (replay guard)
 /// - `commitment.state_hash` doesn't match the expected derivation
 pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
+    assert_closed(env);
     let last_seq: u64 = env.storage().instance().get(&KEY_SEQ).unwrap_or(0);
     if commitment.sequence <= last_seq {
         panic_with_error!(env, AuditError::ReplayedSequence);

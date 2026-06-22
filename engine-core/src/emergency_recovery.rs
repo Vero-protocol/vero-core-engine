@@ -17,6 +17,7 @@ use soroban_sdk::{
 };
 use crate::event_struct::{MOD_RECOVERY, ACT_REQUEST, ACT_TRIGGERED};
 use crate::event_utils::publish_event;
+use crate::circuit_breaker::assert_closed;
 
 const KEY_ADMINS:    Symbol = symbol_short!("ER_ADMINS");
 const KEY_THRESH:    Symbol = symbol_short!("ER_THRESH");
@@ -51,6 +52,7 @@ pub fn init(env: &Env, admins: Vec<Address>, threshold: u32) {
 
 /// Submit (or reset) an emergency recovery request.
 pub fn request(env: &Env, requester: &Address, token: &Address, dest: &Address, amount: i128) {
+    assert_closed(env);
     requester.require_auth();
     require_admin(env, requester);
     validate_address(env, token);
@@ -76,6 +78,7 @@ pub fn request(env: &Env, requester: &Address, token: &Address, dest: &Address, 
 
 /// Approve the pending recovery request.
 pub fn approve(env: &Env, admin: &Address) {
+    assert_closed(env);
     admin.require_auth();
     require_admin(env, admin);
 
@@ -108,6 +111,7 @@ pub fn approve(env: &Env, admin: &Address) {
 // ── internal ──────────────────────────────────────────────────────────────────
 
 fn execute_recovery(env: &Env, dest: &Address) {
+    assert_closed(env);
     let token:  Address = env.storage().instance().get(&KEY_TOKEN).unwrap();
     let amount: i128    = env.storage().instance().get(&KEY_AMOUNT).unwrap();
 

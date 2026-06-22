@@ -3,6 +3,7 @@ use soroban_sdk::{
 };
 use crate::event_struct::{MOD_FEE, ACT_FEE};
 use crate::event_utils::publish_event;
+use crate::circuit_breaker::assert_closed;
 
 const KEY_FEE_BPS:       Symbol = symbol_short!("FEE_BPS");
 const KEY_FEE_RECIPIENT: Symbol = symbol_short!("FEE_RCP");
@@ -42,6 +43,7 @@ pub fn calculate_fee(env: &Env, amount: i128) -> (i128, i128) {
 }
 
 pub fn deduct_fee(env: &Env, token: &Address, amount: i128) -> i128 {
+    assert_closed(env);
     let (fee, net) = calculate_fee(env, amount);
     if fee > 0 {
         let recipient: Address = env

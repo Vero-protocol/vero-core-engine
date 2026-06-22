@@ -190,14 +190,11 @@ pub fn cancel(env: &Env, caller: &Address, proposal_id: u64) -> Proposal {
     caller.require_auth();
     require_signer(env, caller);
 
-    let mut props: Map<u64, (Proposal, u32)> = env
+    let key = proposal_key(env, proposal_id);
+    let (mut prop, unlock): (Proposal, u32) = env
         .storage()
-        .instance()
-        .get(&KEY_PROPOSALS)
-        .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
-
-    let (mut prop, unlock) = props
-        .get(proposal_id)
+        .persistent()
+        .get(&key)
         .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
 
     // An executed proposal is terminal and cannot be rolled back.
@@ -212,8 +209,8 @@ pub fn cancel(env: &Env, caller: &Address, proposal_id: u64) -> Proposal {
     }
 
     prop.state = ProposalState::Cancelled;
-    props.set(proposal_id, (prop.clone(), unlock));
-    env.storage().instance().set(&KEY_PROPOSALS, &props);
+    env.storage().persistent().set(&key, &(prop.clone(), unlock));
+    extend_proposal_ttl(env, &key);
 
     env.events().publish(
         (symbol_short!("GOV"), symbol_short!("cancel")),
@@ -241,6 +238,16 @@ fn require_signer(env: &Env, voter: &Address) {
     if !signers.contains(voter) {
         panic_with_error!(env, GovError::NotASigner);
     }
+}
+
+fn proposal_key(env: &Env, id: u64) -> Symbol {
+    Symbol::new(env, &format!("P{}", id))
+}
+
+fn extend_proposal_ttl(env: &Env, key: &Symbol) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PROPOSAL_TTL_THRESHOLD, PROPOSAL_TTL_EXTEND_TO);
 }
 
 fn require_min_stake(env: &Env, voter: &Address) {
