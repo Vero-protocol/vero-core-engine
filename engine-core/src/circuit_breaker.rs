@@ -6,6 +6,7 @@
 use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec, Map};
 
 use crate::types::BreakerState;
+use crate::access;
 
 const KEY_STATE:    Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
@@ -49,7 +50,15 @@ pub fn assert_closed(env: &Env) {
 /// Trip the breaker — halts the engine. Requires guardian auth.
 pub fn trip(env: &Env, guardian: &Address) {
     guardian.require_auth();
-    require_guardian(env, guardian);
+    // Backwards-compatible: allow either the stored guardian set or an on-chain PAUSE_GUARDIAN role
+    let guard_map: Map<Address, bool> = env
+        .storage()
+        .instance()
+        .get(&KEY_GUARDIAN_MAP)
+        .unwrap_or(Map::new(env));
+    if !guard_map.get(guardian).unwrap_or(false) && !access::has_role(env, guardian, access::ROLE_PAUSE_GUARDIAN) {
+        panic_with_error!(env, BreakerError::NotGuardian);
+    }
     set_state(env, BreakerState::Open);
     env.events().publish(
         (symbol_short!("CB"), symbol_short!("tripped")),
@@ -60,7 +69,8 @@ pub fn trip(env: &Env, guardian: &Address) {
 /// Reset the breaker — resumes normal operation. Requires guardian auth.
 pub fn reset(env: &Env, guardian: &Address) {
     guardian.require_auth();
-    require_guardian(env, guardian);
+    // Only ADMIN may reset the breaker.
+    access::require_role(env, guardian, access::ROLE_ADMIN);
     set_state(env, BreakerState::Closed);
     env.events().publish(
         (symbol_short!("CB"), symbol_short!("reset")),

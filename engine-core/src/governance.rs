@@ -16,6 +16,7 @@ use soroban_sdk::{
 
 use crate::types::{Proposal, ProposalState};
 use crate::circuit_breaker;
+use crate::access;
 
 const KEY_PROPOSALS:  Symbol = symbol_short!("PROPS");
 const KEY_SIGNERS:    Symbol = symbol_short!("SIGNERS");
@@ -83,7 +84,11 @@ pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
         .instance()
         .get(&KEY_SIGNER_MAP)
         .unwrap_or(Map::new(env));
-    if !signer_map.get(&proposal.proposer).unwrap_or(false) {
+    // Allow either a signer from the configured signer set, or an on-chain roleed OP/ADMIN
+    if !signer_map.get(&proposal.proposer).unwrap_or(false)
+        && !access::has_role(env, &proposal.proposer, access::ROLE_OPERATOR)
+        && !access::has_role(env, &proposal.proposer, access::ROLE_ADMIN)
+    {
         panic_with_error!(env, GovError::NotASigner);
     }
     // Initialize state to Pending
@@ -112,7 +117,10 @@ pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {
         .instance()
         .get(&KEY_SIGNER_MAP)
         .unwrap_or(Map::new(env));
-    if !signer_map.get(signer).unwrap_or(false) {
+    if !signer_map.get(signer).unwrap_or(false)
+        && !access::has_role(env, signer, access::ROLE_OPERATOR)
+        && !access::has_role(env, signer, access::ROLE_ADMIN)
+    {
         panic_with_error!(env, GovError::NotASigner);
     }
 

@@ -32,15 +32,19 @@ export class EventPropagator {
   private running = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private processTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly maxEventsPerCycle: number;
 
   constructor(
     private readonly rpc:        RpcClient,
     private readonly contractId: string,
     cursorOverride?: string,
     queuePath?: string,
+    maxEventsPerCycle?: number,
   ) {
     this.cursor = cursorOverride;
     this.queue = new EventQueue(queuePath);
+    // Allow runtime override via constructor, environment, or default to 10
+    this.maxEventsPerCycle = maxEventsPerCycle ?? (process.env.MAX_EVENTS_PER_CYCLE ? parseInt(process.env.MAX_EVENTS_PER_CYCLE, 10) : 10);
   }
 
   /** Register a downstream handler (dashboard websocket, DB writer, etc.). */
@@ -128,7 +132,8 @@ export class EventPropagator {
    * Events transition: pending → processing → processed/failed
    */
   private async handleQueuedEvents(): Promise<void> {
-    while (true) {
+    let processed = 0;
+    while (processed < this.maxEventsPerCycle) {
       const queued = this.queue.dequeue();
       if (!queued) break;
 
@@ -156,6 +161,8 @@ export class EventPropagator {
         logger.error(`[EventPropagator] Handler error for event ${queued.id}:`, error);
         this.queue.markFailed(queued.id, error);
       }
+
+      processed += 1;
     }
   }
 
@@ -172,9 +179,16 @@ export class EventPropagator {
   /** Recovery: process any pending events from previous run. */
   async recoverPendingEvents(): Promise<void> {
     const pending = this.queue.recoverPending();
-    logger.info(`[EventPropagator] Recovering ${pending.length} pending events`);
+    if (!pending || pending.length === 0) return;
 
-    for (const queued of pending) {
+    const toProcess = pending.slice(0, this.maxEventsPerCycle);
+    if (pending.length > toProcess.length) {
+      logger.info(`[EventPropagator] Recovering ${toProcess.length} of ${pending.length} pending events (max ${this.maxEventsPerCycle} per cycle)`);
+    } else {
+      logger.info(`[EventPropagator] Recovering ${toProcess.length} pending events`);
+    }
+
+    for (const queued of toProcess) {
       try {
         const eventObj = typeof queued.eventData === "string"
           ? JSON.parse(queued.eventData)
