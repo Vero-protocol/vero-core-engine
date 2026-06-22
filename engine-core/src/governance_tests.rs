@@ -6,7 +6,7 @@ mod tests {
     use crate::types::{Proposal, ProposalState};
     use soroban_sdk::{
         contract, contractimpl,
-        testutils::{Address as _, Ledger},
+        testutils::{Address as _, Events, Ledger},
         vec, Address, BytesN, Env,
     };
 

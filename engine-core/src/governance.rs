@@ -1,8 +1,8 @@
 use crate::event_utils::publish_event;
 use crate::types::{Proposal, ProposalState};
 use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, vec, Address, BytesN, Env, Map, Symbol,
-    Val, Vec,
+    contracterror, panic_with_error, symbol_short, token, vec, Address, BytesN, Env, IntoVal, Map,
+    Symbol, Val, Vec,
 };
 
 const KEY_PROPOSALS: Symbol = symbol_short!("PROPS");
@@ -99,6 +99,27 @@ pub fn approve(env: &Env, voter: &Address, proposal_id: u64) {
     }
 
     prop.approved_by.push_back(voter.clone());
+
+    // Audit log: record every vote, not only the one that meets threshold.
+    // Topics carry the voter so logs can be filtered per address; the data and
+    // structured payload carry the proposal id and the running approval tally.
+    let votes_cast = prop.approved_by.len();
+
+    env.events().publish(
+        (symbol_short!("GOV"), symbol_short!("vote"), voter.clone()),
+        (proposal_id, votes_cast),
+    );
+
+    let mut vote_payload = Map::new(env);
+    vote_payload.set(Symbol::short("proposal_id"), proposal_id.into());
+    vote_payload.set(Symbol::short("voter"), voter.clone().into_val(env));
+    vote_payload.set(Symbol::short("votes"), votes_cast.into());
+    publish_event(
+        env,
+        BytesN::from_array(env, &[0u8; 32]),
+        BytesN::from_array(env, &[0u8; 32]),
+        vote_payload,
+    );
 
     let threshold: u32 = env.storage().instance().get(&KEY_THRESH).unwrap_or(1);
 
