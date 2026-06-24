@@ -29,6 +29,7 @@ pub const MOD_CB:       u32 = 0x04;
 pub const MOD_BURN:     u32 = 0x05;
 pub const MOD_RECOVERY: u32 = 0x06;
 pub const MOD_FEE:      u32 = 0x07;
+pub const MOD_PAUSE:    u32 = 0x08;
 
 // ── action ids ────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ pub const ACT_BURN_SAFE: u32 = 0x08 << 8;
 pub const ACT_REQUEST:   u32 = 0x09 << 8;
 pub const ACT_TRIGGERED: u32 = 0x0A << 8;
 pub const ACT_FEE:       u32 = 0x0B << 8;
+pub const ACT_PAUSE:    u32 = 0x0C << 8;
+pub const ACT_UNPAUSE:   u32 = 0x0D << 8;
 
 /// Compact event struct — 44 bytes flat, zero heap allocation.
 ///

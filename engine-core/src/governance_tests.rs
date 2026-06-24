@@ -374,4 +374,22 @@ mod tests {
             governance::approve(&env, &b, id); // InvalidStateTransition = 5
         });
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1)")]
+    fn test_propose_blocked_when_paused() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let signer = Address::generate(&env);
+        let (cid, _token) = init_one(&env, &signer, 0);
+        // guardian for circuit breaker
+        let g = Address::generate(&env);
+
+        env.as_contract(&cid, || {
+            crate::circuit_breaker::init(env, vec![env, g.clone()]);
+            crate::circuit_breaker::trip(env, &g);
+            // propose should be blocked by circuit breaker (CircuitOpen = 1)
+            governance::propose(&env, make_proposal(&env, 99, &signer));
+        });
+    }
 }

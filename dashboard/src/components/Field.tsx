@@ -33,8 +33,9 @@ const baseInputClasses =
 const errorInputClasses =
   'border-red-500 dark:border-red-500 focus:ring-red-500';
 
+
 /**
- * `Field` â€” accessible form input with label, optional hint, and inline
+ * `Field` — accessible form input with label, optional hint, and inline
  * error display. Errors are wired with `role="alert"` and `aria-invalid`
  * so screen-readers announce validation failures immediately.
  */

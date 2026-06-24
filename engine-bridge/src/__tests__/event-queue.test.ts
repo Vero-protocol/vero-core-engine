@@ -283,6 +283,33 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("Batch Enqueue", () => {
+    it("enqueues multiple events in a single transaction", () => {
+      const { queue, path } = createTestQueue();
+
+      const events = [
+        createTestEvent("evt-a", "batch.a"),
+        createTestEvent("evt-b", "batch.b"),
+        createTestEvent("evt-c", "batch.c"),
+      ];
+
+      const inserted = queue.enqueueMany(events);
+      expect(inserted).toBe(3);
+
+      // Dequeue them and ensure FIFO order
+      const a = queue.dequeue();
+      const b = queue.dequeue();
+      const c = queue.dequeue();
+
+      expect(a).not.toBeNull();
+      expect(a!.id).toBe("evt-a");
+      expect(b!.id).toBe("evt-b");
+      expect(c!.id).toBe("evt-c");
+
+      cleanupTestQueue(queue, path);
+    });
+  });
+
   describe("Cleanup", () => {
     it("removes old processed events", () => {
       const { queue, path } = createTestQueue();

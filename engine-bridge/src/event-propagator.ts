@@ -32,15 +32,19 @@ export class EventPropagator {
   private running = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private processTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly maxEventsPerCycle: number;
 
   constructor(
     private readonly rpc:        RpcClient,
     private readonly contractId: string,
     cursorOverride?: string,
     queuePath?: string,
+    maxEventsPerCycle?: number,
   ) {
     this.cursor = cursorOverride;
     this.queue = new EventQueue(queuePath);
+    // Allow runtime override via constructor, environment, or default to 10
+    this.maxEventsPerCycle = maxEventsPerCycle ?? (process.env.MAX_EVENTS_PER_CYCLE ? parseInt(process.env.MAX_EVENTS_PER_CYCLE, 10) : 10);
   }
 
   /** Register a downstream handler (dashboard websocket, DB writer, etc.). */
@@ -100,6 +104,7 @@ export class EventPropagator {
       })
     );
 
+    const toEnqueue: EngineEvent[] = [];
     for (const raw of result.events) {
       const event: EngineEvent = {
         id:         raw.id,
@@ -109,15 +114,16 @@ export class EventPropagator {
         ledger:     raw.ledger,
         timestamp:  raw.ledgerClosedAt,
       };
+      toEnqueue.push(event);
+    }
 
-      // Enqueue event for processing by handlers
-      const enqueued = this.queue.enqueue(event);
-      if (!enqueued) {
-        logger.warn("[EventPropagator] Failed to enqueue event:", { eventId: event.id });
+    if (toEnqueue.length > 0) {
+      const inserted = this.queue.enqueueMany(toEnqueue);
+      if (inserted < toEnqueue.length) {
+        logger.warn("[EventPropagator] Some events failed to enqueue", { requested: toEnqueue.length, inserted });
       }
-
-      // Update cursor after successful enqueue (not after handler processing)
-      this.cursor = raw.id;
+      // Advance cursor to last event in the batch
+      this.cursor = result.events[result.events.length - 1].id;
     }
   }
 
@@ -126,14 +132,20 @@ export class EventPropagator {
    * Events transition: pending → processing → processed/failed
    */
   private async handleQueuedEvents(): Promise<void> {
-    while (true) {
+    let processed = 0;
+    while (processed < this.maxEventsPerCycle) {
       const queued = this.queue.dequeue();
       if (!queued) break;
 
       try {
         // Call all handlers in parallel, with error isolation
+        // Lazily parse eventData if it's a raw JSON string (recovered in bulk)
+        const eventObj = typeof queued.eventData === "string"
+          ? JSON.parse(queued.eventData)
+          : queued.eventData;
+
         const results = await Promise.allSettled(
-          this.handlers.map(h => h(queued.eventData))
+          this.handlers.map(h => h(eventObj as EngineEvent))
         );
 
         // Check if any handler failed
@@ -149,6 +161,8 @@ export class EventPropagator {
         logger.error(`[EventPropagator] Handler error for event ${queued.id}:`, error);
         this.queue.markFailed(queued.id, error);
       }
+
+      processed += 1;
     }
   }
 
@@ -170,12 +184,23 @@ export class EventPropagator {
   /** Recovery: process any pending events from previous run. */
   async recoverPendingEvents(): Promise<void> {
     const pending = this.queue.recoverPending();
-    logger.info(`[EventPropagator] Recovering ${pending.length} pending events`);
+    if (!pending || pending.length === 0) return;
 
-    for (const queued of pending) {
+    const toProcess = pending.slice(0, this.maxEventsPerCycle);
+    if (pending.length > toProcess.length) {
+      logger.info(`[EventPropagator] Recovering ${toProcess.length} of ${pending.length} pending events (max ${this.maxEventsPerCycle} per cycle)`);
+    } else {
+      logger.info(`[EventPropagator] Recovering ${toProcess.length} pending events`);
+    }
+
+    for (const queued of toProcess) {
       try {
+        const eventObj = typeof queued.eventData === "string"
+          ? JSON.parse(queued.eventData)
+          : queued.eventData;
+
         const results = await Promise.allSettled(
-          this.handlers.map(h => h(queued.eventData))
+          this.handlers.map(h => h(eventObj as EngineEvent))
         );
 
         const failed = results.some(r => r.status === "rejected");

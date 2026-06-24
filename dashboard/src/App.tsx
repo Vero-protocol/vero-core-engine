@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Shield } from 'lucide-react';
 import { ThemeToggle } from './components/ThemeToggle';
+import GuardianConfigForm from './components/GuardianConfigForm';
 import { GuardianConfigForm } from './components/GuardianConfigForm';
 import { Tabs, type TabDescriptor } from './components/Tabs';
 import { RpcSettings } from './components/RpcSettings';
@@ -67,6 +68,10 @@ function App() {
           aria-labelledby={`tab-${activeTab}`}
         >
           <RenderPanel />
+        </div>
+        
+        <div className="mt-8">
+          <GuardianConfigForm />
         </div>
       </main>
 

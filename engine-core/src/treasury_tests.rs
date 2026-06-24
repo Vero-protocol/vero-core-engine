@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::{symbol_short, Env, Map, Symbol, String, Vec};
+    use soroban_sdk::{symbol_short, Env, Map, Symbol, String, Vec, Address};
 
     /// Test: Snapshot creation with initialization
     #[test]
@@ -145,6 +145,20 @@ mod tests {
         // 2. Verify panics with InvalidBalance error
         //
         // This test verifies that negative balances are rejected.
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1)")]
+    fn test_record_snapshot_blocked_when_paused() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let g = Address::generate(&env);
+        crate::circuit_breaker::init(&env, vec![&env, g.clone()]);
+        crate::circuit_breaker::trip(&env, &g);
+
+        // Attempt to record a snapshot while circuit breaker is open
+        let ctx: Map<Symbol, soroban_sdk::Val> = Map::new(&env);
+        let _ = crate::treasury::record_snapshot(&env, 1000, 1, String::from_slice(&env, "test"), ctx);
     }
 
     /// Test: Snapshot context storage

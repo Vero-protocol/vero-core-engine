@@ -1,12 +1,17 @@
 use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Bytes, Env, IntoVal, Map, String, Symbol, Vec};
 use crate::event_utils::publish_event;
 use crate::types::TreasurySnapshot;
+use crate::circuit_breaker;
 
 const KEY_SNAP_COUNTER: Symbol = symbol_short!("SNAPC");
 const KEY_SNAP_LATEST:  Symbol = symbol_short!("SNAPL");
 const MAX_BALANCE: i128 = 1_000_000_000_000_000_000;
 const MAX_ACCOUNT_COUNT: u32 = 10_000_000;
 
+// Safety cap to prevent unbounded iteration / excessive gas use in audit queries
+const MAX_AUDIT_RESULTS: u32 = 100;
+
+#[contracttype]
 #[contracterror]
 #[derive(Copy, Clone)]
 pub enum TreasuryError {
@@ -61,6 +66,8 @@ pub fn record_snapshot(
     trigger: TriggerKind,
     context: Map<Symbol, Val>,
 ) -> u64 {
+    circuit_breaker::assert_closed(env);
+    // Validate balance is non-negative
     if total_balance < 0 {
         panic_with_error!(env, TreasuryError::InvalidBalance);
     }
@@ -133,6 +140,14 @@ pub fn get_recent_snapshots(env: &Env, count: u32) -> Vec<u64> {
     let count = count.min(MAX_ACCOUNT_COUNT);
     let total = snapshot_count(env);
     let mut result = Vec::new(env);
+
+    let requested = if count > MAX_AUDIT_RESULTS { MAX_AUDIT_RESULTS } else { count };
+    let start = if total as u32 > requested {
+        (total as u32) - requested + 1
+    } else {
+        1
+    };
+
     if total == 0 { return result; }
     let start = if total as u32 > count { (total as u32) - count + 1 } else { 1 };
     for id in (start as u64..=total).rev() {
@@ -147,13 +162,29 @@ pub fn verify_snapshot(env: &Env, snapshot: &TreasurySnapshot) -> bool {
 }
 
 pub fn audit_trail(env: &Env, from_id: u64) -> Vec<TreasurySnapshot> {
+    // Delegate to a bounded audit function to avoid unbounded gas usage.
+    audit_trail_limited(env, from_id, MAX_AUDIT_RESULTS)
+}
+
+/// Audit report (limited): retrieve up to `max_results` snapshots since a given ID.
+/// Returns snapshots in ascending ID order. This bounded variant prevents callers
+/// from triggering unbounded iteration and excessive gas consumption.
+pub fn audit_trail_limited(env: &Env, from_id: u64, max_results: u32) -> Vec<TreasurySnapshot> {
     let total = snapshot_count(env);
     let from_id = from_id.min(total);
     let mut result = Vec::new(env);
+
+    let requested = if max_results > MAX_AUDIT_RESULTS { MAX_AUDIT_RESULTS } else { max_results };
+    let mut collected: u32 = 0;
+
+    let mut id = from_id;
+    while id <= total && collected < requested {
     for id in from_id..=total {
         if let Some(snap) = get_snapshot(env, id) {
             result.push_back(snap);
+            collected += 1;
         }
+        id += 1;
     }
     result
 }

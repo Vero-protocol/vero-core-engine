@@ -9,6 +9,7 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol, By
 use crate::event_struct::{MOD_AUDIT, ACT_COMMIT};
 use crate::event_utils::publish_event;
 use sha2::{Digest, Sha256};
+use crate::circuit_breaker;
 
 use crate::types::StateCommitment;
 use crate::circuit_breaker::assert_closed;
@@ -120,5 +121,28 @@ mod tests {
             validate_transition(&env, &c, payload);
             validate_transition(&env, &c, payload); // second call must panic
         });
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1)")]
+    fn test_validate_blocked_when_paused() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let g = Address::generate(&env);
+        crate::circuit_breaker::init(&env, vec![&env, g.clone()]);
+        crate::circuit_breaker::trip(&env, &g);
+
+        let payload = b"state_payload_v1";
+        let hash = compute_commitment(&[0u8; 32], 1, payload);
+
+        let c = StateCommitment {
+            state_hash: BytesN::from_array(&env, &hash),
+            sequence:   1,
+            ledger:     100,
+            author:     Address::generate(&env),
+        };
+
+        // validate_transition should panic due to circuit breaker being open
+        validate_transition(&env, &c, payload);
     }
 }
