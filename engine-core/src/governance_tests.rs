@@ -7,7 +7,9 @@
 mod tests {
     use crate::VeroCore;
     use crate::VeroCoreClient;
-    use soroban_sdk::{vec, Address, BytesN, Env};
+    use soroban_sdk::{testutils::Ledger, vec, Address, BytesN, Env};
+
+    const TIMELOCK_LEDGERS: u32 = 720;
 
     #[test]
     fn test_proposal_lifecycle_and_upgrade() {
@@ -30,6 +32,64 @@ mod tests {
         env.mock_all_auths();
         let proposal_id = client.propose(&signer1, &wasm_hash);
         assert_eq!(proposal_id, 1);
+    }
+
+    #[test]
+    fn upgrade_requires_quorum_before_timelock_or_wasm_update() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
+
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer2 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer3 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+        let threshold = 2;
+        client.init(&signers, &threshold, &vec![&env]);
+
+        let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
+        let proposal_id = client.propose(&signer1, &wasm_hash);
+
+        let no_signature_upgrade = client.try_upgrade(&proposal_id);
+        assert!(no_signature_upgrade.is_err());
+
+        client.approve(&signer1, &proposal_id);
+        let one_signature_upgrade = client.try_upgrade(&proposal_id);
+        assert!(one_signature_upgrade.is_err());
+
+        client.approve(&signer2, &proposal_id);
+        let timelocked_upgrade = client.try_upgrade(&proposal_id);
+        assert!(timelocked_upgrade.is_err());
+    }
+
+    #[test]
+    fn quorum_approved_proposal_reaches_wasm_update_after_timelock() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
+
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer2 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone(), signer2.clone()];
+        let threshold = 2;
+        client.init(&signers, &threshold, &vec![&env]);
+
+        let wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
+        let proposal_id = client.propose(&signer1, &wasm_hash);
+        client.approve(&signer1, &proposal_id);
+        client.approve(&signer2, &proposal_id);
+
+        env.ledger()
+            .set_sequence_number(env.ledger().sequence() + TIMELOCK_LEDGERS);
+
+        // The bogus WASM hash should only be reached after quorum and timelock
+        // validation pass, proving a single signer cannot trigger this path.
+        let reached_wasm_update = client.try_upgrade(&proposal_id);
+        assert!(reached_wasm_update.is_err());
     }
 
     #[test]

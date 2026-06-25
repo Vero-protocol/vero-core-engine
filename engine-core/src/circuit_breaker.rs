@@ -7,20 +7,22 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, E
 
 use crate::types::BreakerState;
 
-const KEY_STATE:    Symbol = symbol_short!("CB_STATE");
+const KEY_STATE: Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum BreakerError {
-    CircuitOpen      = 1,
-    NotGuardian      = 2,
-    AlreadyInState   = 3,
+    CircuitOpen = 1,
+    NotGuardian = 2,
+    AlreadyInState = 3,
 }
 
 pub fn init(env: &Env, guardians: Vec<Address>) {
-    env.storage().instance().set(&KEY_STATE, &BreakerState::Closed);
+    env.storage()
+        .instance()
+        .set(&KEY_STATE, &BreakerState::Closed);
     env.storage().instance().set(&KEY_GUARDIAN, &guardians);
 }
 

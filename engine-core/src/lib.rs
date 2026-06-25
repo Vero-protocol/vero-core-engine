@@ -65,7 +65,8 @@ impl VeroCore {
     pub fn upgrade(env: Env, proposal_id: u64) {
         circuit_breaker::assert_closed(&env);
         let prop = governance::execute(&env, proposal_id);
-        env.deployer().update_current_contract_wasm(prop.action_hash);
+        env.deployer()
+            .update_current_contract_wasm(prop.action_hash);
     }
 
     /// Validate and record a new state transition.

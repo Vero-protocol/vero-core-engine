@@ -7,11 +7,11 @@ pub struct StateCommitment {
     /// SHA-256 of serialised state payload (32 bytes).
     pub state_hash: BytesN<32>,
     /// Sequence number — monotonically increasing, prevents replay.
-    pub sequence:   u64,
+    pub sequence: u64,
     /// Ledger at which this commitment was recorded.
-    pub ledger:     u32,
+    pub ledger: u32,
     /// Signer that produced this commitment.
-    pub author:     Address,
+    pub author: Address,
 }
 
 /// Proposal state machine for multi-sig governance.
@@ -31,17 +31,17 @@ pub enum ProposalState {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct Proposal {
-    pub id:          u64,
+    pub id: u64,
     pub action_hash: BytesN<32>,
-    pub proposer:    Address,
+    pub proposer: Address,
     pub approved_by: soroban_sdk::Vec<Address>,
-    pub state:       ProposalState,
+    pub state: ProposalState,
 }
 
 /// Circuit-breaker state persisted in contract storage.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum BreakerState {
-    Closed,  // normal operation
-    Open,    // halted — no state transitions allowed
+    Closed, // normal operation
+    Open,   // halted — no state transitions allowed
 }
