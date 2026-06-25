@@ -8,20 +8,25 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, Bytes, Env, Sym
 
 use crate::types::StateCommitment;
 
-const KEY_SEQ:  Symbol = symbol_short!("SEQ");
+const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum AuditError {
-    ReplayedSequence  = 1,
-    HashMismatch      = 2,
+    ReplayedSequence = 1,
+    HashMismatch = 2,
     AuthorUnauthorised = 3,
 }
 
 /// Compute the SHA-256 commitment hash over (prev_hash ‖ sequence ‖ payload).
-pub fn compute_commitment(env: &Env, prev_hash: &[u8; 32], sequence: u64, payload: &Bytes) -> [u8; 32] {
+pub fn compute_commitment(
+    env: &Env,
+    prev_hash: &[u8; 32],
+    sequence: u64,
+    payload: &Bytes,
+) -> [u8; 32] {
     let mut data = Bytes::new(env);
     data.append(&Bytes::from_array(env, prev_hash));
     data.append(&Bytes::from_array(env, &sequence.to_be_bytes()));
@@ -63,11 +68,11 @@ pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &By
 
 #[cfg(test)]
 mod tests {
+    use super::compute_commitment;
+    use crate::types::StateCommitment;
     use crate::VeroCore;
     use crate::VeroCoreClient;
-    use crate::types::StateCommitment;
-    use soroban_sdk::{testutils::Address as _, Address, Bytes, BytesN, Env, vec};
-    use super::compute_commitment;
+    use soroban_sdk::{testutils::Address as _, vec, Address, Bytes, BytesN, Env};
 
     #[test]
     fn valid_first_commitment() {
@@ -85,9 +90,9 @@ mod tests {
 
         let c = StateCommitment {
             state_hash: BytesN::from_array(&env, &hash),
-            sequence:   1,
-            ledger:     100,
-            author:     author.clone(),
+            sequence: 1,
+            ledger: 100,
+            author: author.clone(),
         };
         client.commit(&c, &payload); // must not panic
     }
@@ -108,9 +113,9 @@ mod tests {
         let hash = compute_commitment(&env, &[0u8; 32], 1, &payload);
         let c = StateCommitment {
             state_hash: BytesN::from_array(&env, &hash),
-            sequence:   1,
-            ledger:     100,
-            author:     author.clone(),
+            sequence: 1,
+            ledger: 100,
+            author: author.clone(),
         };
         client.commit(&c, &payload);
         client.commit(&c, &payload); // second call must panic
