@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 4,
+    "address": 3,
     "nonce": 0
   },
   "auth": [
@@ -45,11 +45,7 @@
                           "symbol": "CB_GUARD"
                         },
                         "val": {
-                          "vec": [
-                            {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                            }
-                          ]
+                          "vec": []
                         }
                       },
                       {
@@ -95,7 +91,7 @@
                         "val": {
                           "vec": [
                             {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                             }
                           ]
                         }
@@ -165,7 +161,7 @@
                 {
                   "vec": [
                     {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                     }
                   ]
                 },
@@ -173,11 +169,7 @@
                   "u32": 1
                 },
                 {
-                  "vec": [
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                    }
-                  ]
+                  "vec": []
                 }
               ]
             }
@@ -222,11 +214,18 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "trip"
+                "symbol": "propose"
               }
             ],
             "data": {
-              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                },
+                {
+                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
             }
           }
         }
@@ -246,7 +245,7 @@
               },
               {
                 "error": {
-                  "contract": 2
+                  "contract": 1
                 }
               }
             ],
@@ -256,7 +255,7 @@
                   "string": "failing with contract error"
                 },
                 {
-                  "u32": 2
+                  "u32": 1
                 }
               ]
             }
@@ -278,7 +277,7 @@
               },
               {
                 "error": {
-                  "contract": 2
+                  "contract": 1
                 }
               }
             ],
@@ -303,7 +302,7 @@
               },
               {
                 "error": {
-                  "contract": 2
+                  "contract": 1
                 }
               }
             ],
@@ -328,7 +327,7 @@
               },
               {
                 "error": {
-                  "contract": 2
+                  "contract": 1
                 }
               }
             ],
@@ -338,12 +337,15 @@
                   "string": "contract call failed"
                 },
                 {
-                  "symbol": "trip"
+                  "symbol": "propose"
                 },
                 {
                   "vec": [
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                    },
+                    {
+                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                     }
                   ]
                 }
@@ -367,7 +369,7 @@
               },
               {
                 "error": {
-                  "contract": 2
+                  "contract": 1
                 }
               }
             ],

@@ -12,46 +12,57 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "commit",
+              "function_name": "propose",
               "args": [
                 {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "author"
-                      },
-                      "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "ledger"
-                      },
-                      "val": {
-                        "u32": 100
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "sequence"
-                      },
-                      "val": {
-                        "u64": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "state_hash"
-                      },
-                      "val": {
-                        "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
-                      }
-                    }
-                  ]
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "bytes": "7061796c6f6164"
+                  "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "approve",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "approve",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                },
+                {
+                  "u64": 1
                 }
               ]
             }
@@ -64,7 +75,7 @@
   ],
   "ledger": {
     "protocol_version": 21,
-    "sequence_number": 0,
+    "sequence_number": 720,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
@@ -128,15 +139,7 @@
                           "symbol": "NEXT_ID"
                         },
                         "val": {
-                          "u64": 1
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "PREV_H"
-                        },
-                        "val": {
-                          "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
+                          "u64": 2
                         }
                       },
                       {
@@ -144,15 +147,71 @@
                           "symbol": "PROPS"
                         },
                         "val": {
-                          "map": []
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "SEQ"
-                        },
-                        "val": {
-                          "u64": 1
+                          "map": [
+                            {
+                              "key": {
+                                "u64": 1
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "action_hash"
+                                        },
+                                        "val": {
+                                          "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "approved_by"
+                                        },
+                                        "val": {
+                                          "vec": [
+                                            {
+                                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                            },
+                                            {
+                                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "id"
+                                        },
+                                        "val": {
+                                          "u64": 1
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "proposer"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "state"
+                                        },
+                                        "val": {
+                                          "u32": 1
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "u32": 720
+                                  }
+                                ]
+                              }
+                            }
+                          ]
                         }
                       },
                       {
@@ -161,6 +220,9 @@
                         },
                         "val": {
                           "vec": [
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            },
                             {
                               "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                             }
@@ -172,7 +234,7 @@
                           "symbol": "THRESH"
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       }
                     ]
@@ -207,6 +269,72 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": 801925984706572462
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": 5541220902715666415
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": 5541220902715666415
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": 1033654523790656264
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": 1033654523790656264
                   }
                 },
                 "durability": "temporary",
@@ -265,12 +393,15 @@
                 {
                   "vec": [
                     {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    },
+                    {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                     }
                   ]
                 },
                 {
-                  "u32": 1
+                  "u32": 2
                 },
                 {
                   "vec": []
@@ -318,49 +449,16 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "commit"
+                "symbol": "propose"
               }
             ],
             "data": {
               "vec": [
                 {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "author"
-                      },
-                      "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "ledger"
-                      },
-                      "val": {
-                        "u32": 100
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "sequence"
-                      },
-                      "val": {
-                        "u64": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "state_hash"
-                      },
-                      "val": {
-                        "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
-                      }
-                    }
-                  ]
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "bytes": "7061796c6f6164"
+                  "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
                 }
               ]
             }
@@ -378,19 +476,68 @@
           "v0": {
             "topics": [
               {
-                "symbol": "AUDIT"
+                "symbol": "GOV"
               },
               {
-                "symbol": "commit"
+                "symbol": "propose"
+              }
+            ],
+            "data": {
+              "u64": 1
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "propose"
+              }
+            ],
+            "data": {
+              "u64": 1
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
+              },
+              {
+                "symbol": "approve"
               }
             ],
             "data": {
               "vec": [
                 {
-                  "u64": 1
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
+                  "u64": 1
                 }
               ]
             }
@@ -411,7 +558,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "commit"
+                "symbol": "approve"
               }
             ],
             "data": "void"
@@ -435,51 +582,41 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "commit"
+                "symbol": "approve"
               }
             ],
             "data": {
               "vec": [
                 {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "author"
-                      },
-                      "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "ledger"
-                      },
-                      "val": {
-                        "u32": 100
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "sequence"
-                      },
-                      "val": {
-                        "u64": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "state_hash"
-                      },
-                      "val": {
-                        "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
-                      }
-                    }
-                  ]
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "bytes": "7061796c6f6164"
+                  "u64": 1
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "GOV"
+              },
+              {
+                "symbol": "approved"
+              }
+            ],
+            "data": {
+              "u64": 1
             }
           }
         }
@@ -495,21 +632,91 @@
           "v0": {
             "topics": [
               {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "approve"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
+              },
+              {
+                "symbol": "upgrade"
+              }
+            ],
+            "data": {
+              "u64": 1
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "GOV"
+              },
+              {
+                "symbol": "execute"
+              }
+            ],
+            "data": {
+              "u64": 1
+            }
+          }
+        }
+      },
+      "failed_call": true
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
                 "symbol": "error"
               },
               {
                 "error": {
-                  "contract": 1
+                  "storage": "missing_value"
                 }
               }
             ],
             "data": {
               "vec": [
                 {
-                  "string": "failing with contract error"
+                  "string": "Wasm does not exist"
                 },
                 {
-                  "u32": 1
+                  "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
                 }
               ]
             }
@@ -531,7 +738,7 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "storage": "missing_value"
                 }
               }
             ],
@@ -556,7 +763,7 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "storage": "missing_value"
                 }
               }
             ],
@@ -581,87 +788,26 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "storage": "missing_value"
                 }
               }
             ],
             "data": {
               "vec": [
                 {
-                  "string": "contract call failed"
+                  "string": "contract try_call failed"
                 },
                 {
-                  "symbol": "commit"
+                  "symbol": "upgrade"
                 },
                 {
                   "vec": [
                     {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "author"
-                          },
-                          "val": {
-                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "ledger"
-                          },
-                          "val": {
-                            "u32": 100
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "sequence"
-                          },
-                          "val": {
-                            "u64": 1
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "state_hash"
-                          },
-                          "val": {
-                            "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "bytes": "7061796c6f6164"
+                      "u64": 1
                     }
                   ]
                 }
               ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": null,
-        "type_": "diagnostic",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "error"
-              },
-              {
-                "error": {
-                  "contract": 1
-                }
-              }
-            ],
-            "data": {
-              "string": "escalating error to panic"
             }
           }
         }

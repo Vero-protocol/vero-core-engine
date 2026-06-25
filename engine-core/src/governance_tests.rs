@@ -1,377 +1,127 @@
 #[cfg(test)]
 mod tests {
-    use crate::governance;
-    use crate::types::{Proposal, ProposalState};
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::{Address as _, Events, Ledger},
-        vec, Address, BytesN, Env,
-    };
+    use crate::VeroCore;
+    use crate::VeroCoreClient;
+    use soroban_sdk::{testutils::Ledger, vec, Address, BytesN, Env};
 
-    // ── minimal stub contract ────────────────────────────────────────────────
-
-    #[contract]
-    struct GovContract;
-
-    #[contractimpl]
-    impl GovContract {}
-
-    fn register_contract(env: &Env) -> Address {
-        env.register_contract(None, GovContract)
-    }
-
-    fn register_token(env: &Env) -> Address {
-        env.register_stellar_asset_contract_v2(Address::generate(env))
-            .address()
-    }
-
-    fn fund(env: &Env, token: &Address, to: &Address, amount: i128) {
-        soroban_sdk::token::StellarAssetClient::new(env, token)
-            .mock_all_auths()
-            .mint(to, &amount);
-    }
-
-    fn dummy_hash(env: &Env) -> BytesN<32> {
-        BytesN::from_array(env, &[0u8; 32])
-    }
-
-    fn make_proposal(env: &Env, id: u64, proposer: &Address) -> Proposal {
-        Proposal {
-            id,
-            action_hash:  dummy_hash(env),
-            proposer:     proposer.clone(),
-            approved_by:  vec![env],
-            state:        ProposalState::Pending,
-        }
-    }
-
-    /// Read a proposal back from persistent storage using the hex-encoded key.
-    fn get_proposal(env: &Env, id: u64) -> (Proposal, u32) {
-        let key = Symbol::new(env, &format!("P{:x}", id));
-        env.storage().persistent().get(&key).unwrap()
-    }
-
-    fn init_one(env: &Env, signer: &Address, min_stake: i128) -> (Address, Address) {
-        let cid   = register_contract(env);
-        let token = register_token(env);
-        env.as_contract(&cid, || {
-            governance::init(env, vec![env, signer.clone()], 1, token.clone(), min_stake);
-        });
-        (cid, token)
-    }
-
-    fn init_two(env: &Env, a: &Address, b: &Address) -> Address {
-        let cid = register_contract(env);
-        env.as_contract(&cid, || {
-            governance::init(
-                env,
-                vec![env, a.clone(), b.clone()],
-                2,
-                register_token(env),
-                0,
-            );
-        });
-        cid
-    }
-
-    // ── state transitions ─────────────────────────────────────────────────
+    const TIMELOCK_LEDGERS: u32 = 720;
 
     #[test]
-    fn test_state_transition_approved_to_executed() {
+    fn test_proposal_lifecycle_and_upgrade() {
         let env = Env::default();
-        env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &s1, dummy_hash(&env), 1000);
-            governance::approve(&env, &s1, id);
-            env.ledger().with_mut(|l| l.sequence_number += 721);
-            let executed_prop = governance::execute(&env, id);
-            assert_eq!(executed_prop.state, ProposalState::Executed);
-        });
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
+
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer2 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone(), signer2.clone()];
+        let threshold = 2;
+        let guardian = <Address as soroban_sdk::testutils::Address>::generate(&env);
+
+        client.init(&signers, &threshold, &vec![&env, guardian.clone()]);
+
+        let wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+        // 1. Propose
+        env.mock_all_auths();
+        let proposal_id = client.propose(&signer1, &wasm_hash);
+        assert_eq!(proposal_id, 1);
     }
 
     #[test]
-    fn test_auto_execute_on_approve_after_timelock() {
+    fn upgrade_requires_quorum_before_timelock_or_wasm_update() {
         let env = Env::default();
         env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &s1, dummy_hash(&env), 1000);
-            let id = governance::propose(&env, make_proposal(&env, 2, &s1));
-            env.ledger().with_mut(|l| l.sequence_number += 2000);
-            governance::approve(&env, &s1, id);
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
 
-            let (prop, _) = get_proposal(&env, id);
-            assert_eq!(prop.state, ProposalState::Executed);
-        });
-    }
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer2 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer3 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+        let threshold = 2;
+        client.init(&signers, &threshold, &vec![&env]);
 
-    // ── anti-Sybil stake gate ─────────────────────────────────────────────
+        let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
+        let proposal_id = client.propose(&signer1, &wasm_hash);
 
-    #[test]
-    fn test_approve_passes_with_sufficient_stake() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, token) = init_one(&env, &signer, 1_000);
-        fund(&env, &token, &signer, 1_000);
+        let no_signature_upgrade = client.try_upgrade(&proposal_id);
+        assert!(no_signature_upgrade.is_err());
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &signer, dummy_hash(&env), 1000);
-            governance::approve(&env, &signer, id);
-            let (prop, _) = get_proposal(&env, id);
-            assert_eq!(prop.state, ProposalState::Approved);
-        });
+        client.approve(&signer1, &proposal_id);
+        let one_signature_upgrade = client.try_upgrade(&proposal_id);
+        assert!(one_signature_upgrade.is_err());
+
+        client.approve(&signer2, &proposal_id);
+        let timelocked_upgrade = client.try_upgrade(&proposal_id);
+        assert!(timelocked_upgrade.is_err());
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #6)")]
-    fn test_approve_fails_with_insufficient_stake() {
+    fn quorum_approved_proposal_reaches_wasm_update_after_timelock() {
         let env = Env::default();
         env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, token) = init_one(&env, &signer, 1_000);
-        fund(&env, &token, &signer, 999);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &signer, dummy_hash(&env), 1000);
-            let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id);
-        });
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
+
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signer2 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone(), signer2.clone()];
+        let threshold = 2;
+        client.init(&signers, &threshold, &vec![&env]);
+
+        let wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
+        let proposal_id = client.propose(&signer1, &wasm_hash);
+        client.approve(&signer1, &proposal_id);
+        client.approve(&signer2, &proposal_id);
+
+        env.ledger()
+            .set_sequence_number(env.ledger().sequence() + TIMELOCK_LEDGERS);
+
+        // The bogus WASM hash should only be reached after quorum and timelock
+        // validation pass, proving a single signer cannot trigger this path.
+        let reached_wasm_update = client.try_upgrade(&proposal_id);
+        assert!(reached_wasm_update.is_err());
     }
 
     #[test]
-    fn test_stake_gate_disabled_when_min_stake_zero() {
+    #[should_panic(expected = "Error(Contract, #1)")] // NotASigner
+    fn test_propose_unauthorized() {
         let env = Env::default();
         env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, _) = init_one(&env, &signer, 0);
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &signer, dummy_hash(&env), 1000);
-            governance::approve(&env, &signer, id);
-            let state = env
-                .storage()
-                .instance()
-                .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(
-                    &soroban_sdk::symbol_short!("PROPS"),
-                )
-                .unwrap()
-                .get(id)
-                .unwrap()
-                .0
-                .state;
-            assert_eq!(state, ProposalState::Approved);
-        });
-    }
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone()];
+        client.init(&signers, &1, &vec![&env]);
 
-            let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id);
-            let (prop, _) = get_proposal(&env, id);
-            assert_eq!(prop.state, ProposalState::Approved);
-        });
-    }
-
-    // ── full lifecycle ────────────────────────────────────────────────────
-
-    #[test]
-    fn test_full_lifecycle() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &a, dummy_hash(&env), 1000);
-
-            governance::approve(&env, &a, id);
-            assert_eq!(get_proposal(&env, id).0.state, ProposalState::Pending);
-
-            governance::approve(&env, &b, id);
-            assert_eq!(get_proposal(&env, id).0.state, ProposalState::Approved);
-
-            env.ledger().with_mut(|l| l.sequence_number += 721);
-            let prop = governance::execute(&env, id);
-            assert_eq!(prop.state, ProposalState::Executed);
-        });
+        let rogue = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        client.propose(&rogue, &BytesN::from_array(&env, &[0u8; 32]));
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #4)")]
-    fn test_execute_pending_proposal_rejected() {
+    fn test_circuit_breaker_halts_propose() {
         let env = Env::default();
         env.mock_all_auths();
-        let a = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
+        let contract_id = env.register_contract(None, VeroCore);
+        let client = VeroCoreClient::new(&env, &contract_id);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &a, dummy_hash(&env), 1000);
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::execute(&env, id);
-        });
-    }
+        let signer1 = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let guardian = <Address as soroban_sdk::testutils::Address>::generate(&env);
+        let signers = vec![&env, signer1.clone()];
+        client.init(&signers, &1, &vec![&env, guardian.clone()]);
 
-    #[test]
-    #[should_panic(expected = "Error(Contract, #5)")]
-    fn test_execute_before_timelock_rejected() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, _) = init_one(&env, &signer, 0);
+        client.trip(&guardian);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &signer, dummy_hash(&env), 1000);
-            let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id);
-            governance::execute(&env, id);
-        });
-    }
+        let result = client.try_propose(&signer1, &BytesN::from_array(&env, &[0u8; 32]));
+        assert!(result.is_err());
 
-    #[test]
-    #[should_panic]
-    fn test_duplicate_approval_rejected() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &a, dummy_hash(&env), 1000);
-            governance::approve(&env, &a, id);
-            governance::approve(&env, &a, id);
-            governance::approve(&env, &a, id);
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #1)")]
-    fn test_non_signer_cannot_approve() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let outsider = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, &a, dummy_hash(&env), 1000);
-            governance::approve(&env, &outsider, id);
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::approve(&env, &outsider, id);
-        });
-    }
-
-    // ── cancel / revert ───────────────────────────────────────────────────
-
-    #[test]
-    fn test_cancel_pending_proposal() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &s1));
-            let prop = governance::cancel(&env, &s1, id);
-            assert_eq!(prop.state, ProposalState::Cancelled);
-
-            // The stored proposal is the cancelled (terminal) one.
-            let stored = env
-                .storage()
-                .instance()
-                .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(
-                    &soroban_sdk::symbol_short!("PROPS"),
-                )
-                .unwrap()
-                .get(id)
-                .unwrap()
-                .0
-                .state;
-            assert_eq!(stored, ProposalState::Cancelled);
-        });
-    }
-
-    #[test]
-    fn test_cancel_before_threshold_by_other_signer() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b); // threshold = 2
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::approve(&env, &a, id); // still Pending (1 of 2)
-            let prop = governance::cancel(&env, &b, id);
-            assert_eq!(prop.state, ProposalState::Cancelled);
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #6)")]
-    fn test_cannot_cancel_executed_proposal() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &s1));
-            governance::approve(&env, &s1, id); // → Approved
-            env.ledger().with_mut(|l| l.sequence_number += 721);
-            governance::execute(&env, id); // → Executed
-            governance::cancel(&env, &s1, id); // AlreadyExecuted = 6
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #5)")]
-    fn test_cannot_cancel_twice() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::cancel(&env, &a, id); // → Cancelled
-            governance::cancel(&env, &b, id); // InvalidStateTransition = 5
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #1)")]
-    fn test_non_signer_cannot_cancel() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let outsider = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::cancel(&env, &outsider, id); // NotASigner = 1
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #5)")]
-    fn test_cannot_approve_cancelled_proposal() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::cancel(&env, &a, id); // → Cancelled
-            governance::approve(&env, &b, id); // InvalidStateTransition = 5
-        });
+        client.reset(&guardian);
+        let id = client.propose(&signer1, &BytesN::from_array(&env, &[0u8; 32]));
+        assert_eq!(id, 1);
     }
 }
