@@ -1,8 +1,3 @@
-//! FSM verification tests for governance proposal state transitions.
-//!
-//! This module validates that the proposal state machine enforces valid
-//! transitions and rejects invalid state transition attempts.
-
 #[cfg(test)]
 mod tests {
     use crate::VeroCore;
