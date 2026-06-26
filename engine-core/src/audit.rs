@@ -4,19 +4,19 @@
 //! Off-chain provers submit `StateCommitment`s; this module verifies ordering
 //! and hash integrity before they are persisted.
 
-use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol};
 use sha2::{Digest, Sha256};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol};
 
 use crate::types::StateCommitment;
 
-const KEY_SEQ:  Symbol = symbol_short!("SEQ");
+const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
 
-#[contracttype]
-#[derive(Copy, Clone)]
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum AuditError {
-    ReplayedSequence  = 1,
-    HashMismatch      = 2,
+    ReplayedSequence = 1,
+    HashMismatch = 2,
     AuthorUnauthorised = 3,
 }
 
@@ -63,6 +63,11 @@ pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u
 
 #[cfg(test)]
 mod tests {
+    use soroban_sdk::contract;
+
+    #[contract]
+    struct TestContract;
+
     use super::*;
     use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
@@ -74,11 +79,14 @@ mod tests {
 
         let c = StateCommitment {
             state_hash: BytesN::from_array(&env, &hash),
-            sequence:   1,
-            ledger:     100,
-            author:     Address::generate(&env),
+            sequence: 1,
+            ledger: 100,
+            author: Address::generate(&env),
         };
-        validate_transition(&env, &c, payload); // must not panic
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            validate_transition(&env, &c, payload); // must not panic
+        });
     }
 
     #[test]
@@ -89,11 +97,14 @@ mod tests {
         let hash = compute_commitment(&[0u8; 32], 1, payload);
         let c = StateCommitment {
             state_hash: BytesN::from_array(&env, &hash),
-            sequence:   1,
-            ledger:     100,
-            author:     Address::generate(&env),
+            sequence: 1,
+            ledger: 100,
+            author: Address::generate(&env),
         };
-        validate_transition(&env, &c, payload);
-        validate_transition(&env, &c, payload); // second call must panic
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            validate_transition(&env, &c, payload);
+            validate_transition(&env, &c, payload); // second call must panic
+        });
     }
 }
