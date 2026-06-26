@@ -1,16 +1,18 @@
 use soroban_sdk::{contracttype, contracterror, Address, BytesN, Map, String, Symbol, Val};
 use soroban_sdk::{contracttype, contracterror, Address, BytesN, Map, Symbol, Val};
 
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub enum TreasuryError {
-    InvalidBalance = 1,
-}
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub enum BurnError {
-    ZeroAddress = 1,
+/// Canonical state snapshot committed to a ZK audit cycle.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct StateCommitment {
+    /// SHA-256 of serialised state payload (32 bytes).
+    pub state_hash: BytesN<32>,
+    /// Sequence number — monotonically increasing, prevents replay.
+    pub sequence: u64,
+    /// Ledger at which this commitment was recorded.
+    pub ledger: u32,
+    /// Signer that produced this commitment.
+    pub author: Address,
 }
 
 /// Proposal lifecycle states — stored as u32 bitmask-friendly variant.
@@ -83,17 +85,10 @@ pub struct TreasurySnapshot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Proposal {
     pub id: u64,
-    pub proposer: soroban_sdk::Address,
-    pub action_hash: soroban_sdk::BytesN<32>,
-    pub approved_by: soroban_sdk::Vec<soroban_sdk::Address>,
+    pub action_hash: BytesN<32>,
+    pub proposer: Address,
+    pub approved_by: soroban_sdk::Vec<Address>,
     pub state: ProposalState,
-    pub voting_deadline: u32,
-    pub id:              u64,
-    pub proposer:        Address,
-    pub action_hash:     BytesN<32>,
-    /// Accumulated approvals — bounded by the signer set size.
-    pub approved_by:     soroban_sdk::Vec<Address>,
-    pub state:           ProposalState,
 }
 
 /// Treasury snapshot — compact representation for audit history.
@@ -106,18 +101,8 @@ pub struct Proposal {
 /// `context` is kept as a `Map<Symbol,Val>` for extensibility but callers
 /// should pass minimal maps to limit storage cost.
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TreasurySnapshot {
-    pub id:               u64,
-    pub total_balance:    i128,
-    pub account_count:    u32,
-    /// Ledger sequence at snapshot time.
-    pub ledger:           u32,
-    /// UNIX timestamp at snapshot time (seconds since epoch).
-    pub timestamp_unix:   u64,
-    pub state_hash:       BytesN<32>,
-    /// Trigger classification — replaces the freeform `triggered_by: String`.
-    pub trigger:          TriggerKind,
-    /// Optional small context map. Prefer empty maps when not needed.
-    pub context:          Map<Symbol, Val>,
+#[derive(Clone, Debug, PartialEq)]
+pub enum BreakerState {
+    Closed, // normal operation
+    Open,   // halted — no state transitions allowed
 }
