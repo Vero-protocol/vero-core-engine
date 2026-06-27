@@ -1,33 +1,31 @@
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, IntoVal, Symbol, Vec, BytesN, Map};
 //! Emergency circuit-breaker — halts all state transitions when tripped.
 //!
 //! Only authorised guardians may open or close the breaker.
 //! All stateful entry-points must call `assert_closed` before proceeding.
 
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, BytesN, Env, Symbol, Vec};
 
-use crate::event_struct::{MOD_CB, ACT_TRIP, ACT_RESET};
+use crate::event_struct::{ACT_RESET, ACT_TRIP, MOD_CB};
 use crate::event_utils::publish_event;
 use crate::types::BreakerState;
 
-const KEY_STATE: Symbol = symbol_short!("CB_STATE");
+const KEY_STATE:    Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum BreakerError {
-    CircuitOpen = 1,
-    NotGuardian = 2,
+    CircuitOpen    = 1,
+    NotGuardian    = 2,
     AlreadyInState = 3,
 }
 
 pub fn init(env: &Env, guardians: Vec<Address>) {
-    env.storage()
-        .instance()
-        .set(&KEY_STATE, &BreakerState::Closed);
+    env.storage().instance().set(&KEY_STATE, &BreakerState::Closed);
     env.storage().instance().set(&KEY_GUARDIAN, &guardians);
 }
 
+/// Panics with [`BreakerError::CircuitOpen`] when the breaker is open.
 pub fn assert_closed(env: &Env) {
     let state: BreakerState = env
         .storage()
@@ -44,16 +42,7 @@ pub fn trip(env: &Env, guardian: &Address) {
     guardian.require_auth();
     require_guardian(env, guardian);
     set_state(env, BreakerState::Open);
-    // Single compact event — replaces previous double-emit.
-    publish_event(
-        env,
-        MOD_CB | ACT_TRIP,
-        0,
-        BytesN::from_array(env, &[0u8; 32]),
-    );
-    let mut payload = Map::new(env);
-    payload.set(symbol_short!("guardian"), guardian.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, & [0u8; 32]), BytesN::from_array(env, & [0u8; 32]), payload);
+    publish_event(env, MOD_CB | ACT_TRIP, 0, BytesN::from_array(env, &[0u8; 32]));
 }
 
 pub fn reset(env: &Env, guardian: &Address) {
@@ -61,16 +50,7 @@ pub fn reset(env: &Env, guardian: &Address) {
     guardian.require_auth();
     require_guardian(env, guardian);
     set_state(env, BreakerState::Closed);
-    // Single compact event — replaces previous double-emit.
-    publish_event(
-        env,
-        MOD_CB | ACT_RESET,
-        0,
-        BytesN::from_array(env, &[0u8; 32]),
-    );
-    let mut payload = Map::new(env);
-    payload.set(symbol_short!("guardian"), guardian.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, & [0u8; 32]), BytesN::from_array(env, & [0u8; 32]), payload);
+    publish_event(env, MOD_CB | ACT_RESET, 0, BytesN::from_array(env, &[0u8; 32]));
 }
 
 fn set_state(env: &Env, state: BreakerState) {
@@ -98,19 +78,8 @@ fn require_guardian(env: &Env, caller: &Address) {
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::contract;
-
-    #[contract]
-    struct TestContract;
-
     use super::*;
-    use soroban_sdk::{testutils::Address as _, contract, contractimpl, vec, Env};
-
-    #[contract]
-    pub struct TestContract;
-
-    #[contractimpl]
-    impl TestContract {}
+    use soroban_sdk::{testutils::Address as _, vec, Env};
 
     #[soroban_sdk::contract]
     pub struct TestContract;
@@ -126,19 +95,19 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             init(&env, vec![&env, g.clone()]);
-            assert_closed(&env); // should not panic
+            assert_closed(&env);
         });
 
         env.mock_all_auths();
         env.as_contract(&contract_id, || {
             trip(&env, &g);
-
             let state: BreakerState = env.storage().instance().get(&KEY_STATE).unwrap();
             assert_eq!(state, BreakerState::Open);
         });
+
         env.as_contract(&contract_id, || {
             reset(&env, &g);
-            assert_closed(&env); // back to closed — no panic
+            assert_closed(&env);
         });
     }
 

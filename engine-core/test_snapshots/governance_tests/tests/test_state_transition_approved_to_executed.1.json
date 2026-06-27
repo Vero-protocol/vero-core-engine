@@ -218,14 +218,39 @@
           "v0": {
             "topics": [
               {
-                "symbol": "GOV"
+                "symbol": "EVENT"
               },
               {
-                "symbol": "propose"
+                "symbol": "LOG"
               }
             ],
             "data": {
-              "u64": 1
+              "map": [
+                {
+                  "key": {
+                    "symbol": "flags"
+                  },
+                  "val": {
+                    "u32": 770
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "hash"
+                  },
+                  "val": {
+                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "value"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
+                }
+              ]
             }
           }
         }
@@ -241,14 +266,39 @@
           "v0": {
             "topics": [
               {
-                "symbol": "GOV"
+                "symbol": "EVENT"
               },
               {
-                "symbol": "approved"
+                "symbol": "LOG"
               }
             ],
             "data": {
-              "u64": 1
+              "map": [
+                {
+                  "key": {
+                    "symbol": "flags"
+                  },
+                  "val": {
+                    "u32": 1026
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "hash"
+                  },
+                  "val": {
+                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "value"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
+                }
+              ]
             }
           }
         }
@@ -264,14 +314,39 @@
           "v0": {
             "topics": [
               {
-                "symbol": "GOV"
+                "symbol": "EVENT"
               },
               {
-                "symbol": "execute"
+                "symbol": "LOG"
               }
             ],
             "data": {
-              "u64": 1
+              "map": [
+                {
+                  "key": {
+                    "symbol": "flags"
+                  },
+                  "val": {
+                    "u32": 1282
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "hash"
+                  },
+                  "val": {
+                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "value"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
+                }
+              ]
             }
           }
         }

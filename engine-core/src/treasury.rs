@@ -245,7 +245,7 @@ fn make_snap_key(env: &Env, id: u64) -> Symbol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{Env, Map, Symbol};
+    use soroban_sdk::{testutils::Ledger as _, Env, Map, Symbol};
 
     #[soroban_sdk::contract]
     pub struct TestContract;

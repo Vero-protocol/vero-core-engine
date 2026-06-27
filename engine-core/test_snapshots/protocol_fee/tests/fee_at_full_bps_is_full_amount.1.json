@@ -4,6 +4,7 @@
     "nonce": 0
   },
   "auth": [
+    [],
     []
   ],
   "ledger": {
@@ -41,18 +42,18 @@
                     "storage": [
                       {
                         "key": {
-                          "symbol": "PREV_H"
+                          "symbol": "FEE_BPS"
                         },
                         "val": {
-                          "bytes": "31b5ccceb7b2eece59647ed1c647b5cd692422ef2e6043a4b514677cf35cfbb9"
+                          "u32": 10000
                         }
                       },
                       {
                         "key": {
-                          "symbol": "SEQ"
+                          "symbol": "FEE_RCP"
                         },
                         "val": {
-                          "u64": 1
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                         }
                       }
                     ]
@@ -88,54 +89,5 @@
       ]
     ]
   },
-  "events": [
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "EVENT"
-              },
-              {
-                "symbol": "LOG"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "flags"
-                  },
-                  "val": {
-                    "u32": 257
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "hash"
-                  },
-                  "val": {
-                    "bytes": "31b5ccceb7b2eece59647ed1c647b5cd692422ef2e6043a4b514677cf35cfbb9"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "value"
-                  },
-                  "val": {
-                    "u64": 1
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    }
-  ]
+  "events": []
 }

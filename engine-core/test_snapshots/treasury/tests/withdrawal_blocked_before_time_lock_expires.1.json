@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 2,
+    "address": 1,
     "nonce": 0
   },
   "auth": [],
@@ -92,7 +92,7 @@
                     "symbol": "flags"
                   },
                   "val": {
-                    "u32": 770
+                    "u32": 2307
                   }
                 },
                 {
@@ -108,7 +108,7 @@
                     "symbol": "value"
                   },
                   "val": {
-                    "u64": 1
+                    "u64": 7
                   }
                 }
               ]
@@ -131,7 +131,7 @@
               },
               {
                 "error": {
-                  "contract": 5
+                  "contract": 7
                 }
               }
             ],
@@ -141,7 +141,7 @@
                   "string": "failing with contract error"
                 },
                 {
-                  "u32": 5
+                  "u32": 7
                 }
               ]
             }
@@ -163,7 +163,7 @@
               },
               {
                 "error": {
-                  "contract": 5
+                  "contract": 7
                 }
               }
             ],
