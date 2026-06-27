@@ -1,3 +1,7 @@
 [workspace]
 members = ["engine-core"]
 resolver = "2"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true

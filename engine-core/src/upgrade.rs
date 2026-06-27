@@ -1,13 +1,9 @@
 //! Governed contract upgrades.
-//!
-//! Upgrades are intentionally not protected by a single admin key.  Callers must
-//! first create a governance proposal whose `action_hash` is the new WASM hash,
-//! collect the configured signer quorum, wait for the governance time-lock, and
-//! then call `upgrade` with that approved proposal id.
 
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env};
-
+use crate::event_struct::{ACT_UPGRADE, MOD_UPGRADE};
+use crate::event_utils::publish_event;
 use crate::{governance, types::ProposalState};
+use soroban_sdk::{contracterror, panic_with_error, BytesN, Env};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -17,15 +13,6 @@ pub enum UpgradeError {
 }
 
 /// Upgrade the current contract to `new_wasm_hash` after multi-sig approval.
-///
-/// The linked governance proposal must:
-/// - exist,
-/// - be in `Approved` state (which means quorum was reached),
-/// - have an `action_hash` equal to `new_wasm_hash`, and
-/// - pass governance execution checks, including the time-lock.
-///
-/// `governance::execute` marks the proposal as executed before the WASM swap, so
-/// the same approval cannot be replayed for a second upgrade.
 pub fn upgrade(env: &Env, proposal_id: u64, new_wasm_hash: BytesN<32>) {
     if new_wasm_hash.to_array() == [0u8; 32] {
         panic_with_error!(env, UpgradeError::InvalidWasmHash);
@@ -40,26 +27,25 @@ pub fn upgrade(env: &Env, proposal_id: u64, new_wasm_hash: BytesN<32>) {
     }
 
     governance::execute(env, proposal_id);
-    env.deployer().update_current_contract_wasm(new_wasm_hash);
-    env.events().publish(
-        (symbol_short!("UPGRADE"), symbol_short!("wasm")),
-        proposal_id,
-    );
+    env.deployer()
+        .update_current_contract_wasm(new_wasm_hash.clone());
+    publish_event(env, MOD_UPGRADE | ACT_UPGRADE, proposal_id, new_wasm_hash);
 }
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::contract;
-
-    #[contract]
-    struct TestContract;
-
     use super::*;
     use crate::{governance, types::Proposal};
     use soroban_sdk::{
         testutils::{Address as _, Ledger},
         vec, Address, BytesN, Env,
     };
+
+    #[soroban_sdk::contract]
+    pub struct TestContract;
+
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
 
     fn proposal(env: &Env, proposer: Address, wasm_hash: BytesN<32>) -> Proposal {
         Proposal {
@@ -85,7 +71,6 @@ mod tests {
             governance::init(&env, vec![&env, alice.clone(), bob], 2);
             governance::propose(&env, proposal(&env, alice.clone(), hash.clone()));
             governance::approve(&env, &alice, 7);
-
             upgrade(&env, 7, hash);
         });
     }
@@ -106,8 +91,8 @@ mod tests {
             governance::propose(&env, proposal(&env, alice.clone(), approved_hash));
             governance::approve(&env, &alice, 7);
             governance::approve(&env, &bob, 7);
-            env.ledger().set_sequence_number(721);
-
+            env.ledger()
+                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
             upgrade(&env, 7, unapproved_hash);
         });
     }
