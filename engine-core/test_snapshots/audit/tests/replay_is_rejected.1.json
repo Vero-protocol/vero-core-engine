@@ -79,19 +79,37 @@
           "v0": {
             "topics": [
               {
-                "symbol": "AUDIT"
+                "symbol": "EVENT"
               },
               {
-                "symbol": "commit"
+                "symbol": "LOG"
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "u64": 1
+                  "key": {
+                    "symbol": "flags"
+                  },
+                  "val": {
+                    "u32": 257
+                  }
                 },
                 {
-                  "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
+                  "key": {
+                    "symbol": "hash"
+                  },
+                  "val": {
+                    "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "value"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
                 }
               ]
             }

@@ -2,6 +2,7 @@
 extern crate alloc;
 pub mod audit;
 pub mod circuit_breaker;
+pub mod core;
 pub mod event_struct;
 pub mod event_utils;
 pub mod governance;

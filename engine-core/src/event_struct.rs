@@ -1,24 +1,22 @@
 use soroban_sdk::{contracttype, BytesN, Map, Symbol, Val};
 
-//! Compact event encoding — bitmask-based event struct.
-//!
-//! Replaces the previous fat `Event { event_type: BytesN<32>, action: BytesN<32>, payload: Map }`
-//! which wasted 64 bytes of zeroed data and allocated an expensive `Map<Symbol,Val>` on every call.
-//!
-//! ## Encoding
-//!
-//! `flags` packs module id (bits 0–7) and action id (bits 8–15) into a single `u32`:
-//!
-//! ```text
-//! bits  0– 7 : module id  (MOD_*)
-//! bits  8–15 : action id  (ACT_*)
-//! bits 16–31 : reserved for future use / version
-//! ```
-//!
-//! `value` carries a u64 primary value (sequence, proposal id, amount, …).
-//! `hash`  carries an optional 32-byte hash (state_hash, action_hash). Zero if unused.
-
-use soroban_sdk::contracttype;
+// Compact event encoding — bitmask-based event struct.
+//
+// Replaces the previous fat `Event { event_type: BytesN<32>, action: BytesN<32>, payload: Map }`
+// which wasted 64 bytes of zeroed data and allocated an expensive `Map<Symbol,Val>` on every call.
+//
+// ## Encoding
+//
+// `flags` packs module id (bits 0–7) and action id (bits 8–15) into a single `u32`:
+//
+// ```text
+// bits  0– 7 : module id  (MOD_*)
+// bits  8–15 : action id  (ACT_*)
+// bits 16–31 : reserved for future use / version
+// ```
+//
+// `value` carries a u64 primary value (sequence, proposal id, amount, …).
+// `hash`  carries an optional 32-byte hash (state_hash, action_hash). Zero if unused.
 
 // ── module ids ────────────────────────────────────────────────────────────────
 

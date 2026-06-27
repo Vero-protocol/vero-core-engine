@@ -5,10 +5,11 @@
 //! and hash integrity before they are persisted.
 
 use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol, BytesN};
 
 use crate::types::StateCommitment;
-use crate::circuit_breaker::assert_closed;
+use crate::event_struct::{MOD_AUDIT, ACT_COMMIT};
+use crate::event_utils::publish_event;
 
 const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -21,7 +22,6 @@ pub enum AuditError {
     AuthorUnauthorised = 3,
 }
 
-/// Compute the SHA-256 commitment hash over (prev_hash ‖ sequence ‖ payload).
 pub fn compute_commitment(prev_hash: &[u8; 32], sequence: u64, payload: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(prev_hash);
@@ -30,11 +30,6 @@ pub fn compute_commitment(prev_hash: &[u8; 32], sequence: u64, payload: &[u8]) -
     h.finalize().into()
 }
 
-/// Validate and record a new `StateCommitment`.
-///
-/// Panics if:
-/// - `commitment.sequence` ≤ last recorded sequence (replay guard)
-/// - `commitment.state_hash` doesn't match the expected derivation
 pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
     crate::non_reentrant!(env);
     let last_seq: u64 = env.storage().instance().get(&KEY_SEQ).unwrap_or(0);
@@ -57,40 +52,24 @@ pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u
     env.storage().instance().set(&KEY_SEQ, &commitment.sequence);
     env.storage().instance().set(&KEY_PREV, &actual);
 
-    // Single compact event — replaces the previous double-emit pattern.
+    // Single compact event
     publish_event(
         env,
         MOD_AUDIT | ACT_COMMIT,
         commitment.sequence,
         commitment.state_hash.clone(),
     );
-    // Emit structured Event for audit logs
-    let mut payload = Map::new(env);
-    payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
-    payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
 }
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::contract;
-
-    #[contract]
-    struct TestContract;
-
     use super::*;
-    use soroban_sdk::{testutils::Address as _, contract, contractimpl, Address, BytesN, Env};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
 
     #[contract]
     pub struct TestContract;
 
     #[contractimpl]
-    impl TestContract {}
-
-    #[soroban_sdk::contract]
-    pub struct TestContract;
-
-    #[soroban_sdk::contractimpl]
     impl TestContract {}
 
     #[test]
