@@ -55,6 +55,7 @@ pub fn init(env: &Env) {
 
 /// Queue a treasury outflow behind the mandatory 24-hour delay.
 pub fn schedule_outflow(env: &Env, outflow_id: u64, amount: i128) -> u64 {
+    crate::circuit_breaker::assert_closed(env);
     if amount <= 0 {
         panic_with_error!(env, TreasuryError::InvalidOutflowAmount);
     }
@@ -87,6 +88,7 @@ pub fn schedule_outflow(env: &Env, outflow_id: u64, amount: i128) -> u64 {
 ///
 /// Callers should perform the token transfer only after this function returns.
 pub fn execute_outflow(env: &Env, outflow_id: u64) -> TimelockedOutflow {
+    crate::circuit_breaker::assert_closed(env);
     let mut outflows = load_outflows(env);
     let mut outflow = outflows
         .get(outflow_id)
@@ -128,6 +130,7 @@ pub fn record_snapshot(
     trigger: TriggerKind,
     context: Map<Symbol, Val>,
 ) -> u64 {
+    crate::circuit_breaker::assert_closed(env);
     if total_balance < 0 {
         panic_with_error!(env, TreasuryError::InvalidBalance);
     }

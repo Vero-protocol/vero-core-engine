@@ -27,6 +27,7 @@ pub enum UpgradeError {
 /// `governance::execute` marks the proposal as executed before the WASM swap, so
 /// the same approval cannot be replayed for a second upgrade.
 pub fn upgrade(env: &Env, proposal_id: u64, new_wasm_hash: BytesN<32>) {
+    crate::circuit_breaker::assert_closed(env);
     if new_wasm_hash.to_array() == [0u8; 32] {
         panic_with_error!(env, UpgradeError::InvalidWasmHash);
     }

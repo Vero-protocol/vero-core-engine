@@ -23,22 +23,13 @@ pub fn reject_zero_address(env: &Env, to: &Address) {
     }
 }
 
+/// Burn-safe transfer wrapper. Validates recipient before emitting a single compact event.
 pub fn burn_to(env: &Env, to: &Address, amount: i128) {
+    crate::circuit_breaker::assert_closed(env);
     reject_zero_address(env, to);
     if amount <= 0 {
         panic_with_error!(env, BurnError::ZeroAddress);
     }
-    env.events().publish(
-        (symbol_short!("TRE"), symbol_short!("burn_safe")),
-        (to.clone(), amount),
-    );
-    let mut payload = Map::new(env);
-    payload.set(symbol_short!("to"), to.clone().into_val(env));
-    payload.set(symbol_short!("amount"), amount.into_val(env));
-    publish_event(env, BytesN::from_array(env, & [0u8; 32]), BytesN::from_array(env, & [0u8; 32]), payload);
-/// Burn-safe transfer wrapper. Validates recipient before emitting a single compact event.
-pub fn burn_to(env: &Env, _to: &Address, amount: i128) {
-    reject_zero_address(env, _to);
     // Single compact event — module=BURN, action=BURN_SAFE, value=amount as u64 (safe for normal amounts).
     publish_event(
         env,
