@@ -8,7 +8,8 @@ use sha2::{Digest, Sha256};
 use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol};
 
 use crate::types::StateCommitment;
-use crate::circuit_breaker::assert_closed;
+use crate::event_struct::{MOD_AUDIT, ACT_COMMIT};
+use crate::event_utils::publish_event;
 
 const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -64,11 +65,6 @@ pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u
         commitment.sequence,
         commitment.state_hash.clone(),
     );
-    // Emit structured Event for audit logs
-    let mut payload = Map::new(env);
-    payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
-    payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
 }
 
 #[cfg(test)]
