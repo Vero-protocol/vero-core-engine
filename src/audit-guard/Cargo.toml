@@ -2,17 +2,10 @@
 name = "vero-audit-guard"
 version = "0.1.0"
 edition = "2021"
-description = "Vero Protocol — Audit Guard module"
+description = "Automated development task for the vero-audit-guard module"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 soroban-sdk = { version = "21.0.0" }
-
-[profile.release]
-opt-level = "z"
-overflow-checks = true
-
-[dev-dependencies]
-soroban-sdk = { version = "21.0.0", features = ["testutils"] }

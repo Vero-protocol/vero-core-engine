@@ -3,9 +3,7 @@
     "address": 2,
     "nonce": 0
   },
-  "auth": [
-    []
-  ],
+  "auth": [],
   "ledger": {
     "protocol_version": 21,
     "sequence_number": 0,
@@ -38,93 +36,7 @@
                     "executable": {
                       "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     },
-                    "storage": [
-                      {
-                        "key": {
-                          "symbol": "PROPS"
-                        },
-                        "val": {
-                          "map": [
-                            {
-                              "key": {
-                                "u64": 1
-                              },
-                              "val": {
-                                "vec": [
-                                  {
-                                    "map": [
-                                      {
-                                        "key": {
-                                          "symbol": "action_hash"
-                                        },
-                                        "val": {
-                                          "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                                        }
-                                      },
-                                      {
-                                        "key": {
-                                          "symbol": "approved_by"
-                                        },
-                                        "val": {
-                                          "vec": []
-                                        }
-                                      },
-                                      {
-                                        "key": {
-                                          "symbol": "id"
-                                        },
-                                        "val": {
-                                          "u64": 1
-                                        }
-                                      },
-                                      {
-                                        "key": {
-                                          "symbol": "proposer"
-                                        },
-                                        "val": {
-                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                                        }
-                                      },
-                                      {
-                                        "key": {
-                                          "symbol": "state"
-                                        },
-                                        "val": {
-                                          "u32": 0
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "u32": 720
-                                  }
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "SIGNERS"
-                        },
-                        "val": {
-                          "vec": [
-                            {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "THRESH"
-                        },
-                        "val": {
-                          "u32": 1
-                        }
-                      }
-                    ]
+                    "storage": null
                   }
                 }
               }
@@ -132,6 +44,39 @@
             "ext": "v0"
           },
           4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": 801925984706572462
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": 801925984706572462
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
         ]
       ],
       [
@@ -162,19 +107,53 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
+        "type_": "diagnostic",
         "body": {
           "v0": {
             "topics": [
               {
-                "symbol": "GOV"
+                "symbol": "error"
               },
               {
-                "symbol": "propose"
+                "error": {
+                  "auth": "invalid_action"
+                }
               }
             ],
             "data": {
-              "u64": 1
+              "vec": [
+                {
+                  "string": "Unauthorized function call for address"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "auth": "invalid_action"
+                }
+              }
+            ],
+            "data": {
+              "string": "escalating error to panic"
             }
           }
         }

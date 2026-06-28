@@ -20,6 +20,105 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "symbol": "S1"
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "symbol": "S1"
+                },
+                "durability": "temporary",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "account_count"
+                      },
+                      "val": {
+                        "u32": 2
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "context"
+                      },
+                      "val": {
+                        "map": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "ledger"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "state_hash"
+                      },
+                      "val": {
+                        "bytes": "07586b978bc32ed5959e4cf607f6debcbd3a8cb8225357a37eff8e34668b29d6"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp_unix"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_balance"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 500
+                        }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "trigger"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          120960
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -41,78 +140,10 @@
                     "storage": [
                       {
                         "key": {
-                          "symbol": "S1"
+                          "symbol": "OUTFLOWS"
                         },
                         "val": {
-                          "map": [
-                            {
-                              "key": {
-                                "symbol": "account_count"
-                              },
-                              "val": {
-                                "u32": 2
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "context"
-                              },
-                              "val": {
-                                "map": []
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "id"
-                              },
-                              "val": {
-                                "u64": 1
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "ledger"
-                              },
-                              "val": {
-                                "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "state_hash"
-                              },
-                              "val": {
-                                "bytes": "07586b978bc32ed5959e4cf607f6debcbd3a8cb8225357a37eff8e34668b29d6"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "timestamp"
-                              },
-                              "val": {
-                                "string": "0"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "total_balance"
-                              },
-                              "val": {
-                                "i128": {
-                                  "hi": 0,
-                                  "lo": 500
-                                }
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "triggered_by"
-                              },
-                              "val": {
-                                "string": "withdrawal"
-                              }
-                            }
-                          ]
+                          "map": []
                         }
                       },
                       {
@@ -174,29 +205,6 @@
           "v0": {
             "topics": [
               {
-                "symbol": "TRE"
-              },
-              {
-                "symbol": "snapshot"
-              }
-            ],
-            "data": {
-              "u64": 1
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
                 "symbol": "EVENT"
               },
               {
@@ -207,62 +215,26 @@
               "map": [
                 {
                   "key": {
-                    "symbol": "action"
+                    "symbol": "flags"
                   },
                   "val": {
-                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    "u32": 515
                   }
                 },
                 {
                   "key": {
-                    "symbol": "event_type"
+                    "symbol": "hash"
                   },
                   "val": {
-                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    "bytes": "07586b978bc32ed5959e4cf607f6debcbd3a8cb8225357a37eff8e34668b29d6"
                   }
                 },
                 {
                   "key": {
-                    "symbol": "payload"
+                    "symbol": "value"
                   },
                   "val": {
-                    "map": [
-                      {
-                        "key": {
-                          "symbol": "accounts"
-                        },
-                        "val": {
-                          "u32": 2
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "balance"
-                        },
-                        "val": {
-                          "i128": {
-                            "hi": 0,
-                            "lo": 500
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "id"
-                        },
-                        "val": {
-                          "u64": 1
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "ledger"
-                        },
-                        "val": {
-                          "u32": 0
-                        }
-                      }
-                    ]
+                    "u64": 1
                   }
                 }
               ]
