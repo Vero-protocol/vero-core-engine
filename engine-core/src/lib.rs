@@ -10,6 +10,7 @@ pub mod types;
 pub mod version;
 pub mod event_struct;
 pub mod event_utils;
+pub mod core;
 
 #[cfg(test)]
 mod governance_tests;
