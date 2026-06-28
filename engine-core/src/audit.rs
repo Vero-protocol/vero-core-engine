@@ -7,8 +7,9 @@
 use sha2::{Digest, Sha256};
 use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol};
 
+use crate::event_struct::{ACT_COMMIT, MOD_AUDIT};
+use crate::event_utils::publish_event;
 use crate::types::StateCommitment;
-use crate::circuit_breaker::assert_closed;
 
 const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -64,33 +65,17 @@ pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u
         commitment.sequence,
         commitment.state_hash.clone(),
     );
-    // Emit structured Event for audit logs
-    let mut payload = Map::new(env);
-    payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
-    payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
 }
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::contract;
-
-    #[contract]
-    struct TestContract;
-
     use super::*;
-    use soroban_sdk::{testutils::Address as _, contract, contractimpl, Address, BytesN, Env};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
 
     #[contract]
     pub struct TestContract;
 
     #[contractimpl]
-    impl TestContract {}
-
-    #[soroban_sdk::contract]
-    pub struct TestContract;
-
-    #[soroban_sdk::contractimpl]
     impl TestContract {}
 
     #[test]
@@ -103,9 +88,9 @@ mod tests {
 
             let c = StateCommitment {
                 state_hash: BytesN::from_array(&env, &hash),
-                sequence:   1,
-                ledger:     100,
-                author:     Address::generate(&env),
+                sequence: 1,
+                ledger: 100,
+                author: Address::generate(&env),
             };
             validate_transition(&env, &c, payload); // must not panic
         });
@@ -121,9 +106,9 @@ mod tests {
             let hash = compute_commitment(&[0u8; 32], 1, payload);
             let c = StateCommitment {
                 state_hash: BytesN::from_array(&env, &hash),
-                sequence:   1,
-                ledger:     100,
-                author:     Address::generate(&env),
+                sequence: 1,
+                ledger: 100,
+                author: Address::generate(&env),
             };
             validate_transition(&env, &c, payload);
             validate_transition(&env, &c, payload);

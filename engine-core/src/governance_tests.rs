@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::governance;
+    use crate::governance::{self, GovError};
     use crate::types::{Proposal, ProposalState};
     use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, vec, Address, BytesN, Env, contract, contractimpl};
 
@@ -45,7 +45,7 @@ mod tests {
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
 
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
         env.as_contract(&contract_id, || {
             governance::init(&env, vec![&env, proposer.clone()], 1);
             let prop = create_dummy_proposal(&env, &proposer);
@@ -66,7 +66,7 @@ mod tests {
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
 
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
         env.as_contract(&contract_id, || {
             governance::init(&env, vec![&env, proposer.clone()], 1);
             let prop = create_dummy_proposal(&env, &proposer);
@@ -92,7 +92,7 @@ mod tests {
         let proposer = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
         env.as_contract(&contract_id, || {
             governance::init(&env, vec![&env, proposer.clone(), signer2.clone()], 1);
             let prop = create_dummy_proposal(&env, &proposer);
@@ -129,7 +129,7 @@ mod tests {
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
 
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
         env.as_contract(&contract_id, || {
             governance::init(&env, vec![&env, proposer.clone()], 1);
             let prop = create_dummy_proposal(&env, &proposer);
@@ -151,7 +151,7 @@ mod tests {
         let proposer = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
         env.as_contract(&contract_id, || {
             governance::init(&env, vec![&env, proposer.clone(), signer2.clone()], 1);
             let prop = create_dummy_proposal(&env, &proposer);
@@ -171,7 +171,7 @@ mod tests {
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
 
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
         env.as_contract(&contract_id, || {
             governance::init(&env, vec![&env, proposer.clone()], 1);
             let prop = create_dummy_proposal(&env, &proposer);
@@ -203,7 +203,7 @@ mod tests {
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
 
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
         env.as_contract(&contract_id, || {
             governance::init(&env, vec![&env, proposer.clone()], 2);
             let prop = create_dummy_proposal(&env, &proposer);
@@ -214,6 +214,7 @@ mod tests {
             governance::approve(&env, &proposer, id);
         });
     }
+}
 
 /// State Transition Matrix (for documentation)
 ///
@@ -227,4 +228,5 @@ mod tests {
 /// | Approved | execute (timelock active) | — | No | TimelockActive |
 /// | Executed | approve | — | No | InvalidStateTransition |
 /// | Executed | execute | — | No | InvalidStateTransition |
+#[allow(dead_code)]
 pub struct StateTransitionMatrix;
