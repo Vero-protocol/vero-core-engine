@@ -62,6 +62,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -79,6 +80,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -99,6 +101,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
@@ -130,6 +133,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -149,6 +153,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
@@ -170,6 +175,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -218,6 +224,7 @@ mod tests {
             governance::approve(&env, &proposer, id);
         });
     }
+}
 
 /// State Transition Matrix (for documentation)
 ///

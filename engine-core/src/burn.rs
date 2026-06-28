@@ -30,6 +30,7 @@ fn amount_to_event_value(env: &Env, amount: i128) -> u64 {
 
 /// Burn-safe transfer wrapper. Validates recipient/amount before emitting.
 pub fn burn_to(env: &Env, to: &Address, amount: i128) {
+    crate::circuit_breaker::assert_closed(env);
     reject_zero_address(env, to);
     let value = amount_to_event_value(env, amount);
     publish_event(env, MOD_BURN | ACT_BURN_SAFE, value, zero_hash(env));
