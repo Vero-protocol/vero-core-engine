@@ -1,3 +1,4 @@
+
 use soroban_sdk::{contract, contractimpl, contracttype, Env, Symbol, Address, BytesN};
 
 #[contracttype]
@@ -54,3 +55,8 @@ impl EngineCore {
         env.events().publish((Symbol::new(&env, "halted"),), admin);
     }
 }
+
+pub mod control_plane;
+
+#[cfg(test)]
+mod tests;
