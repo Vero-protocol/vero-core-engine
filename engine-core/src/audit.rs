@@ -5,10 +5,12 @@
 //! and hash integrity before they are persisted.
 
 use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol, Map, BytesN, IntoVal};
 
 use crate::types::StateCommitment;
 use crate::circuit_breaker::assert_closed;
+use crate::event_utils::{publish_event, publish_event_legacy};
+use crate::event_struct::{MOD_AUDIT, ACT_COMMIT};
 
 const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -68,16 +70,11 @@ pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u
     let mut payload = Map::new(env);
     payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
     payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
+    publish_event_legacy(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
 }
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::contract;
-
-    #[contract]
-    struct TestContract;
-
     use super::*;
     use soroban_sdk::{testutils::Address as _, contract, contractimpl, Address, BytesN, Env};
 
@@ -85,12 +82,6 @@ mod tests {
     pub struct TestContract;
 
     #[contractimpl]
-    impl TestContract {}
-
-    #[soroban_sdk::contract]
-    pub struct TestContract;
-
-    #[soroban_sdk::contractimpl]
     impl TestContract {}
 
     #[test]

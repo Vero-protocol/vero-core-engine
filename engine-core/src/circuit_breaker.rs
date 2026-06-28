@@ -1,13 +1,12 @@
 use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, IntoVal, Symbol, Vec, BytesN, Map};
-//! Emergency circuit-breaker — halts all state transitions when tripped.
-//!
-//! Only authorised guardians may open or close the breaker.
-//! All stateful entry-points must call `assert_closed` before proceeding.
 
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
+// Emergency circuit-breaker — halts all state transitions when tripped.
+//
+// Only authorised guardians may open or close the breaker.
+// All stateful entry-points must call `assert_closed` before proceeding.
 
 use crate::event_struct::{MOD_CB, ACT_TRIP, ACT_RESET};
-use crate::event_utils::publish_event;
+use crate::event_utils::{publish_event, publish_event_legacy};
 use crate::types::BreakerState;
 
 const KEY_STATE: Symbol = symbol_short!("CB_STATE");
@@ -53,7 +52,7 @@ pub fn trip(env: &Env, guardian: &Address) {
     );
     let mut payload = Map::new(env);
     payload.set(symbol_short!("guardian"), guardian.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, & [0u8; 32]), BytesN::from_array(env, & [0u8; 32]), payload);
+    publish_event_legacy(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
 }
 
 pub fn reset(env: &Env, guardian: &Address) {
@@ -70,7 +69,7 @@ pub fn reset(env: &Env, guardian: &Address) {
     );
     let mut payload = Map::new(env);
     payload.set(symbol_short!("guardian"), guardian.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, & [0u8; 32]), BytesN::from_array(env, & [0u8; 32]), payload);
+    publish_event_legacy(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
 }
 
 fn set_state(env: &Env, state: BreakerState) {
@@ -98,11 +97,6 @@ fn require_guardian(env: &Env, caller: &Address) {
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::contract;
-
-    #[contract]
-    struct TestContract;
-
     use super::*;
     use soroban_sdk::{testutils::Address as _, contract, contractimpl, vec, Env};
 
@@ -110,12 +104,6 @@ mod tests {
     pub struct TestContract;
 
     #[contractimpl]
-    impl TestContract {}
-
-    #[soroban_sdk::contract]
-    pub struct TestContract;
-
-    #[soroban_sdk::contractimpl]
     impl TestContract {}
 
     #[test]
