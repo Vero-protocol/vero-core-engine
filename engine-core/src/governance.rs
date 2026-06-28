@@ -144,13 +144,25 @@ fn require_stake(env: &Env, signer: &Address) {
     }
 }
 
-    publish_event(
-        env,
-        MOD_GOV | ACT_PROPOSE,
-        proposal.id,
-        BytesN::from_array(env, &[0u8; 32]),
-    );
-    proposal.id
+/// Submit a new proposal. `proposal.proposer` must be an authorised signer.
+/// Returns the proposal id.
+pub fn propose(env: &Env, proposal: Proposal) -> u64 {
+    crate::non_reentrant!(env);
+    require_signer(env, &proposal.proposer);
+
+    let mut prop = proposal;
+    prop.state = ProposalState::Pending;
+    let id = prop.id;
+
+    let mut proposals = load_proposals(env);
+    if proposals.contains_key(id) {
+        panic_with_error!(env, GovError::ProposalAlreadyExists);
+    }
+    proposals.set(id, (prop, 0u32));
+    save_proposals(env, &proposals);
+
+    publish_event(env, MOD_GOV | ACT_PROPOSE, id, zero_hash(env));
+    id
 }
 
 pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {

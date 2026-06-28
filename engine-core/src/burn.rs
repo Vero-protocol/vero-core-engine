@@ -6,7 +6,7 @@
 use soroban_sdk::{contracterror, panic_with_error, Address, BytesN, Env, String};
 
 use crate::event_struct::{ACT_BURN_SAFE, MOD_BURN};
-use crate::event_utils::publish_event;
+use crate::event_utils::{publish_event, zero_hash};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]

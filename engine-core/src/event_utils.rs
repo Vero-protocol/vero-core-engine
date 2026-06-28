@@ -3,7 +3,6 @@
 use soroban_sdk::{symbol_short, BytesN, Env};
 
 use crate::event_struct::CompactEvent;
-use soroban_sdk::{symbol_short, BytesN, Env};
 
 /// Publish a compact, structured event.
 ///

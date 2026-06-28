@@ -8,7 +8,6 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, B
 use crate::event_struct::{ACT_RESET, ACT_TRIP, MOD_CB};
 use crate::event_utils::publish_event;
 use crate::types::BreakerState;
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
 
 const KEY_STATE:    Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
@@ -35,12 +34,8 @@ pub fn assert_closed(env: &Env) {
         .storage()
         .instance()
         .get(&KEY_STATE)
-        .unwrap_or(BreakerState::Closed)
-}
-
-/// Panics with `CircuitOpen` when the breaker is tripped.
-pub fn assert_closed(env: &Env) {
-    if state(env) == BreakerState::Open {
+        .unwrap_or(BreakerState::Closed);
+    if state == BreakerState::Open {
         panic_with_error!(env, BreakerError::CircuitOpen);
     }
 }
@@ -64,7 +59,11 @@ pub fn reset(env: &Env, guardian: &Address) {
 }
 
 fn set_state(env: &Env, next: BreakerState) {
-    let current = state(env);
+    let current: BreakerState = env
+        .storage()
+        .instance()
+        .get(&KEY_STATE)
+        .unwrap_or(BreakerState::Closed);
     if current == next {
         panic_with_error!(env, BreakerError::AlreadyInState);
     }

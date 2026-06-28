@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_invalid_transition_error_code() {
-        assert_eq!(GovError::InvalidStateTransition as u32, 4);
+        assert_eq!(GovError::InvalidStateTransition as u32, 5);
     }
 
     #[test]
