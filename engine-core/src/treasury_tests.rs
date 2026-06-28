@@ -9,7 +9,6 @@
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::{symbol_short, Env, Map, Symbol, String, Vec};
 
     /// Test: Snapshot creation with initialization
     #[test]
