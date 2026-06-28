@@ -67,4 +67,39 @@ impl ControlPlane {
         // Update the parameter
         env.storage().instance().set(&param_key, &param_val);
     }
+
+    /// Mutate multiple protocol parameters securely in a single batch call.
+    ///
+    /// Requires administrative authorization, asserts the circuit breaker is closed,
+    /// and invokes the ZK-ready `validate_transition` hook to ensure state integrity.
+    pub fn batch_update_param(
+        env: Env,
+        caller: Address,
+        params: soroban_sdk::Vec<(Symbol, u64)>,
+        commitment: StateCommitment,
+        payload: BytesN<32>,
+    ) {
+        caller.require_auth();
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&KEY_ADMIN)
+            .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized));
+
+        if caller != admin {
+            panic_with_error!(&env, ControlPlaneError::Unauthorized);
+        }
+
+        // Ensure the protocol isn't paused
+        assert_closed(&env);
+
+        // ZK-ready integrity check (enforces no replays and valid hash)
+        validate_transition(&env, &commitment, &payload.to_array());
+
+        // Update the parameters in batch
+        for param in params.iter() {
+            env.storage().instance().set(&param.0, &param.1);
+        }
+    }
 }

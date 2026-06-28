@@ -98,6 +98,12 @@ mod tests {
     use super::*;
     use soroban_sdk::{testutils::Address as _, vec, Env};
 
+    #[soroban_sdk::contract]
+    pub struct TestContract;
+
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
+
     #[test]
     fn trip_and_reset() {
         let env = Env::default();

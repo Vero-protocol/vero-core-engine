@@ -239,4 +239,3 @@ mod tests {
 /// | Executed | approve | — | No | InvalidStateTransition |
 /// | Executed | execute | — | No | InvalidStateTransition |
 pub struct StateTransitionMatrix;
-}
