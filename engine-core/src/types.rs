@@ -1,16 +1,20 @@
 use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Val};
 
-/// Canonical state snapshot committed to a ZK audit cycle.
+/// Canonical state commitment submitted by an off-chain ZK/audit worker.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateCommitment {
+    /// Strictly increasing commitment sequence.
     pub sequence: u64,
+    /// Hash over `(previous_hash || sequence || payload)`.
     pub state_hash: BytesN<32>,
+    /// Ledger sequence at which the transition was observed/submitted.
     pub ledger: u32,
+    /// Authenticated prover/auditor submitting the commitment.
     pub author: Address,
 }
 
-/// Proposal lifecycle states, stored as u32 bitmask-friendly variants.
+/// Governance proposal lifecycle.
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ProposalState {
@@ -21,6 +25,7 @@ pub enum ProposalState {
     Cancelled = 4,
 }
 
+/// Circuit-breaker state.
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BreakerState {
@@ -42,7 +47,7 @@ pub enum TriggerKind {
     Other = 7,
 }
 
-/// Compact treasury snapshot for audit history.
+/// Compact treasury snapshot for integrity checks and off-chain audit trails.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TreasurySnapshot {

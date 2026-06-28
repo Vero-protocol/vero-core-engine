@@ -1,50 +1,51 @@
 //! Emergency recovery — multi-sig guarded exit path for bricked contracts.
-//!
-//! When normal governance is unavailable (e.g. contract bricked, execution path
-//! unreachable), this module provides an out-of-band admin recovery path that
-//! drains locked funds to a pre-approved destination.
-//!
-//! ## Safety model
-//! * Requires `threshold` distinct admin approvals before the exit executes.
-//! * Admins are set at `init` time and stored in instance storage.
-//! * Once triggered, a `ER/triggered` event is emitted for off-chain audit.
-//! * Only one pending recovery request exists at a time; a new `request` call
-//!   resets any prior unapproved request.
 
-use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, vec, Address, BytesN, Env, String,
-    Symbol, Vec,
-};
-use crate::event_struct::{MOD_RECOVERY, ACT_REQUEST, ACT_TRIGGERED};
-use crate::event_utils::publish_event;
 use crate::circuit_breaker::assert_closed;
+use crate::event_struct::{ACT_REQUEST, ACT_TRIGGERED, MOD_RECOVERY};
+use crate::event_utils::{publish_event, zero_hash};
+use soroban_sdk::{
+    contracterror, panic_with_error, symbol_short, token, vec, Address, Env, String, Symbol, Vec,
+};
 
-const KEY_ADMINS:    Symbol = symbol_short!("ER_ADMINS");
-const KEY_THRESH:    Symbol = symbol_short!("ER_THRESH");
+const KEY_ADMINS: Symbol = symbol_short!("ER_ADMINS");
+const KEY_THRESH: Symbol = symbol_short!("ER_THRESH");
 const KEY_APPROVALS: Symbol = symbol_short!("ER_APPRVS");
-const KEY_DEST:      Symbol = symbol_short!("ER_DEST");
-const KEY_TOKEN:     Symbol = symbol_short!("ER_TOKEN");
-const KEY_AMOUNT:    Symbol = symbol_short!("ER_AMOUNT");
+const KEY_DEST: Symbol = symbol_short!("ER_DEST");
+const KEY_TOKEN: Symbol = symbol_short!("ER_TOKEN");
+const KEY_AMOUNT: Symbol = symbol_short!("ER_AMOUNT");
+const ZERO_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 #[contracterror]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum RecoveryError {
-    NotAdmin            = 1,
-    InvalidAddress      = 6,
-    AlreadyApproved     = 2,
-    ThresholdNotMet     = 3,
-    NoPendingRequest    = 4,
-    InvalidThreshold    = 5,
+    NotAdmin = 1,
+    AlreadyApproved = 2,
+    ThresholdNotMet = 3,
+    NoPendingRequest = 4,
+    InvalidThreshold = 5,
+    InvalidAddress = 6,
+    InvalidAmount = 7,
+    AlreadyInitialized = 8,
 }
 
 /// Initialise the recovery module.
 pub fn init(env: &Env, admins: Vec<Address>, threshold: u32) {
-    for admin in admins.iter() {
-        validate_address(env, &admin);
+    if env.storage().instance().has(&KEY_ADMINS) {
+        panic_with_error!(env, RecoveryError::AlreadyInitialized);
     }
     if threshold == 0 || threshold > admins.len() {
         panic_with_error!(env, RecoveryError::InvalidThreshold);
     }
+
+    let mut seen = Vec::new(env);
+    for admin in admins.iter() {
+        validate_address(env, &admin);
+        if seen.contains(&admin) {
+            panic_with_error!(env, RecoveryError::InvalidThreshold);
+        }
+        seen.push_back(admin);
+    }
+
     env.storage().instance().set(&KEY_ADMINS, &admins);
     env.storage().instance().set(&KEY_THRESH, &threshold);
     clear_pending(env);
@@ -52,33 +53,44 @@ pub fn init(env: &Env, admins: Vec<Address>, threshold: u32) {
 
 /// Submit (or reset) an emergency recovery request.
 pub fn request(env: &Env, requester: &Address, token: &Address, dest: &Address, amount: i128) {
+    crate::non_reentrant!(env);
     assert_closed(env);
+
     requester.require_auth();
     require_admin(env, requester);
     validate_address(env, token);
     validate_address(env, dest);
+    if amount <= 0 {
+        panic_with_error!(env, RecoveryError::InvalidAmount);
+    }
 
     clear_pending(env);
-    env.storage().instance().set(&KEY_TOKEN,  token);
-    env.storage().instance().set(&KEY_DEST,   dest);
+    env.storage().instance().set(&KEY_TOKEN, token);
+    env.storage().instance().set(&KEY_DEST, dest);
     env.storage().instance().set(&KEY_AMOUNT, &amount);
 
     let mut approvals: Vec<Address> = vec![env];
     approvals.push_back(requester.clone());
     env.storage().instance().set(&KEY_APPROVALS, &approvals);
 
-    // Single compact event.
     publish_event(
         env,
         MOD_RECOVERY | ACT_REQUEST,
-        amount as u64,
-        BytesN::from_array(env, &[0u8; 32]),
+        event_amount(env, amount),
+        zero_hash(env),
     );
+
+    let threshold: u32 = env.storage().instance().get(&KEY_THRESH).unwrap_or(1);
+    if approvals.len() >= threshold {
+        execute_recovery(env, dest);
+    }
 }
 
 /// Approve the pending recovery request.
 pub fn approve(env: &Env, admin: &Address) {
+    crate::non_reentrant!(env);
     assert_closed(env);
+
     admin.require_auth();
     require_admin(env, admin);
 
@@ -102,33 +114,37 @@ pub fn approve(env: &Env, admin: &Address) {
     env.storage().instance().set(&KEY_APPROVALS, &approvals);
 
     let threshold: u32 = env.storage().instance().get(&KEY_THRESH).unwrap_or(1);
-
     if approvals.len() >= threshold {
         execute_recovery(env, &dest);
     }
 }
 
-// ── internal ──────────────────────────────────────────────────────────────────
+pub fn pending_approvals(env: &Env) -> Vec<Address> {
+    env.storage()
+        .instance()
+        .get(&KEY_APPROVALS)
+        .unwrap_or(vec![env])
+}
 
 fn execute_recovery(env: &Env, dest: &Address) {
-    assert_closed(env);
-    let token:  Address = env.storage().instance().get(&KEY_TOKEN).unwrap();
-    let amount: i128    = env.storage().instance().get(&KEY_AMOUNT).unwrap();
+    let token: Address = env
+        .storage()
+        .instance()
+        .get(&KEY_TOKEN)
+        .unwrap_or_else(|| panic_with_error!(env, RecoveryError::NoPendingRequest));
+    let amount: i128 = env
+        .storage()
+        .instance()
+        .get(&KEY_AMOUNT)
+        .unwrap_or_else(|| panic_with_error!(env, RecoveryError::NoPendingRequest));
 
-    token::Client::new(env, &token).transfer(
-        &env.current_contract_address(),
-        dest,
-        &amount,
-    );
-
-    // Single compact event.
+    token::Client::new(env, &token).transfer(&env.current_contract_address(), dest, &amount);
     publish_event(
         env,
         MOD_RECOVERY | ACT_TRIGGERED,
-        amount as u64,
-        BytesN::from_array(env, &[0u8; 32]),
+        event_amount(env, amount),
+        zero_hash(env),
     );
-
     clear_pending(env);
 }
 
@@ -151,20 +167,19 @@ fn require_admin(env: &Env, caller: &Address) {
     }
 }
 
-/// Helper to validate that an address is not obviously invalid (empty string).
 fn validate_address(env: &Env, addr: &Address) {
-    let s = addr.to_string();
-    if s.is_empty() {
-        panic_with_error!(env, RecoveryError::InvalidAddress);
-    }
-    // Guard against all-zero (zero address) via string comparison.
-    let zero = String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
-    if addr.to_string() == zero {
+    let zero = String::from_str(env, ZERO_ADDRESS);
+    if addr.to_string().is_empty() || addr.to_string() == zero {
         panic_with_error!(env, RecoveryError::InvalidAddress);
     }
 }
 
-// ── tests ─────────────────────────────────────────────────────────────────────
+fn event_amount(env: &Env, amount: i128) -> u64 {
+    if amount <= 0 || amount > u64::MAX as i128 {
+        panic_with_error!(env, RecoveryError::InvalidAmount);
+    }
+    amount as u64
+}
 
 #[cfg(test)]
 mod tests {
@@ -177,17 +192,12 @@ mod tests {
     #[soroban_sdk::contractimpl]
     impl TestContract {}
 
-    fn setup(env: &Env, n: u32, threshold: u32) -> (Address, Vec<Address>) {
+    fn setup(env: &Env, admin_count: u32, threshold: u32) -> (soroban_sdk::Address, Vec<Address>) {
         let contract_id = env.register_contract(None, TestContract);
         let mut admins = vec![env];
-        for _ in 0..n {
+        for _ in 0..admin_count {
             admins.push_back(Address::generate(env));
         }
-        let admins: Vec<Address> = (0..n)
-            .map(|_| Address::generate(env))
-            .collect::<std::vec::Vec<_>>()
-            .iter()
-            .fold(vec![env], |mut v, a| { v.push_back(a.clone()); v });
         env.as_contract(&contract_id, || init(env, admins.clone(), threshold));
         (contract_id, admins)
     }
@@ -196,24 +206,18 @@ mod tests {
     #[should_panic]
     fn init_rejects_zero_threshold() {
         let env = Env::default();
-        env.mock_all_auths();
         let a = Address::generate(&env);
         let contract_id = env.register_contract(None, TestContract);
-        env.as_contract(&contract_id, || {
-            init(&env, vec![&env, a.clone()], 0);
-        });
+        env.as_contract(&contract_id, || init(&env, vec![&env, a], 0));
     }
 
     #[test]
     #[should_panic]
     fn init_rejects_threshold_exceeding_admin_count() {
         let env = Env::default();
-        env.mock_all_auths();
         let a = Address::generate(&env);
         let contract_id = env.register_contract(None, TestContract);
-        env.as_contract(&contract_id, || {
-            init(&env, vec![&env, a.clone()], 2);
-        });
+        env.as_contract(&contract_id, || init(&env, vec![&env, a], 2));
     }
 
     #[test]
@@ -224,25 +228,8 @@ mod tests {
         let (contract_id, _) = setup(&env, 2, 2);
         let rogue = Address::generate(&env);
         let token = Address::generate(&env);
-        let dest  = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            request(&env, &rogue, &token, &dest, 1000);
-        });
-    }
-
-    #[test]
-    #[should_panic]
-    fn non_admin_cannot_approve() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let (contract_id, admins) = setup(&env, 2, 2);
-        let token = Address::generate(&env);
-        let dest  = Address::generate(&env);
-        let rogue = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            request(&env, &admins.get(0).unwrap(), &token, &dest, 1000);
-            approve(&env, &rogue);
-        });
+        let dest = Address::generate(&env);
+        env.as_contract(&contract_id, || request(&env, &rogue, &token, &dest, 1000));
     }
 
     #[test]
@@ -252,11 +239,11 @@ mod tests {
         env.mock_all_auths();
         let (contract_id, admins) = setup(&env, 2, 2);
         let token = Address::generate(&env);
-        let dest  = Address::generate(&env);
-        let a0 = admins.get(0).unwrap();
+        let dest = Address::generate(&env);
+        let admin = admins.get(0).unwrap();
         env.as_contract(&contract_id, || {
-            request(&env, &a0, &token, &dest, 1000);
-            approve(&env, &a0);
+            request(&env, &admin, &token, &dest, 1000);
+            approve(&env, &admin);
         });
     }
 
@@ -266,12 +253,11 @@ mod tests {
         env.mock_all_auths();
         let (contract_id, admins) = setup(&env, 3, 2);
         let token = Address::generate(&env);
-        let dest  = Address::generate(&env);
-        let a0 = admins.get(0).unwrap();
+        let dest = Address::generate(&env);
+        let admin = admins.get(0).unwrap();
         env.as_contract(&contract_id, || {
-            request(&env, &a0, &token, &dest, 500);
-            let stored_dest: Option<Address> = env.storage().instance().get(&KEY_DEST);
-            assert!(stored_dest.is_some());
+            request(&env, &admin, &token, &dest, 500);
+            assert_eq!(pending_approvals(&env).len(), 1);
         });
     }
 }

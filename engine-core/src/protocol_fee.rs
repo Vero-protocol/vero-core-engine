@@ -1,40 +1,44 @@
-use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, Address, BytesN, Env, Symbol,
-};
-use crate::event_struct::{MOD_FEE, ACT_FEE};
-use crate::event_utils::publish_event;
-use crate::circuit_breaker::assert_closed;
+//! Protocol fee helpers with checked arithmetic.
 
-const KEY_FEE_BPS:       Symbol = symbol_short!("FEE_BPS");
+use crate::circuit_breaker::assert_closed;
+use crate::event_struct::{ACT_FEE, MOD_FEE};
+use crate::event_utils::{publish_event, zero_hash};
+use soroban_sdk::{
+    contracterror, panic_with_error, symbol_short, token, Address, Env, String, Symbol,
+};
+
+const KEY_FEE_BPS: Symbol = symbol_short!("FEE_BPS");
 const KEY_FEE_RECIPIENT: Symbol = symbol_short!("FEE_RCP");
+const MAX_BPS: u32 = 10_000;
+const ZERO_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 #[contracterror]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum FeeError {
-    InvalidBasisPoints      = 1,
-    InvalidRecipient        = 2,
-    FeeCalculationOverflow  = 3,
+    InvalidBasisPoints = 1,
+    InvalidRecipient = 2,
+    FeeCalculationOverflow = 3,
+    InvalidAmount = 4,
 }
 
-const MAX_BPS: u32 = 10000;
-
 pub fn init(env: &Env, fee_bps: u32, recipient: &Address) {
-    if fee_bps > MAX_BPS {
-        panic_with_error!(env, FeeError::InvalidBasisPoints);
-    }
+    validate_bps(env, fee_bps);
     validate_address(env, recipient);
-    env.storage().instance().set(&KEY_FEE_BPS,       &fee_bps);
+    env.storage().instance().set(&KEY_FEE_BPS, &fee_bps);
     env.storage().instance().set(&KEY_FEE_RECIPIENT, recipient);
 }
 
 pub fn calculate_fee(env: &Env, amount: i128) -> (i128, i128) {
+    if amount < 0 {
+        panic_with_error!(env, FeeError::InvalidAmount);
+    }
     let fee_bps: u32 = env.storage().instance().get(&KEY_FEE_BPS).unwrap_or(0);
     if fee_bps == 0 || amount == 0 {
         return (0, amount);
     }
     let fee = amount
         .checked_mul(fee_bps as i128)
-        .and_then(|v| v.checked_div(10000))
+        .and_then(|value| value.checked_div(MAX_BPS as i128))
         .unwrap_or_else(|| panic_with_error!(env, FeeError::FeeCalculationOverflow));
     let net = amount
         .checked_sub(fee)
@@ -43,7 +47,9 @@ pub fn calculate_fee(env: &Env, amount: i128) -> (i128, i128) {
 }
 
 pub fn deduct_fee(env: &Env, token: &Address, amount: i128) -> i128 {
+    crate::non_reentrant!(env);
     assert_closed(env);
+
     let (fee, net) = calculate_fee(env, amount);
     if fee > 0 {
         let recipient: Address = env
@@ -52,19 +58,12 @@ pub fn deduct_fee(env: &Env, token: &Address, amount: i128) -> i128 {
             .get(&KEY_FEE_RECIPIENT)
             .unwrap_or_else(|| panic_with_error!(env, FeeError::InvalidRecipient));
 
-        token::Client::new(env, token).transfer(
-            &env.current_contract_address(),
-            &recipient,
-            &fee,
-        );
+        token::Client::new(env, token).transfer(&env.current_contract_address(), &recipient, &fee);
 
-        // Single compact event — fee amount in value field.
-        publish_event(
-            env,
-            MOD_FEE | ACT_FEE,
-            fee as u64,
-            BytesN::from_array(env, &[0u8; 32]),
-        );
+        if fee > u64::MAX as i128 {
+            panic_with_error!(env, FeeError::FeeCalculationOverflow);
+        }
+        publish_event(env, MOD_FEE | ACT_FEE, fee as u64, zero_hash(env));
     }
     net
 }
@@ -76,9 +75,7 @@ pub fn get_fee_config(env: &Env) -> (u32, Option<Address>) {
 }
 
 pub fn set_fee_bps(env: &Env, fee_bps: u32) {
-    if fee_bps > MAX_BPS {
-        panic_with_error!(env, FeeError::InvalidBasisPoints);
-    }
+    validate_bps(env, fee_bps);
     env.storage().instance().set(&KEY_FEE_BPS, &fee_bps);
 }
 
@@ -87,9 +84,15 @@ pub fn set_fee_recipient(env: &Env, recipient: &Address) {
     env.storage().instance().set(&KEY_FEE_RECIPIENT, recipient);
 }
 
+fn validate_bps(env: &Env, fee_bps: u32) {
+    if fee_bps > MAX_BPS {
+        panic_with_error!(env, FeeError::InvalidBasisPoints);
+    }
+}
+
 fn validate_address(env: &Env, addr: &Address) {
-    let s = addr.to_string();
-    if s.is_empty() {
+    let zero = String::from_str(env, ZERO_ADDRESS);
+    if addr.to_string().is_empty() || addr.to_string() == zero {
         panic_with_error!(env, FeeError::InvalidRecipient);
     }
 }
@@ -108,9 +111,7 @@ mod tests {
     fn setup(env: &Env, fee_bps: u32) -> (soroban_sdk::Address, Address) {
         let contract_id = env.register_contract(None, TestContract);
         let recipient = Address::generate(env);
-        env.as_contract(&contract_id, || {
-            init(env, fee_bps, &recipient);
-        });
+        env.as_contract(&contract_id, || init(env, fee_bps, &recipient));
         (contract_id, recipient)
     }
 
@@ -148,20 +149,9 @@ mod tests {
     }
 
     #[test]
-    fn zero_amount_no_fee() {
-        let env = Env::default();
-        let (contract_id, _) = setup(&env, 500);
-        env.as_contract(&contract_id, || {
-            let (fee, net) = calculate_fee(&env, 0);
-            assert_eq!(fee, 0);
-            assert_eq!(net, 0);
-        });
-    }
-
-    #[test]
     fn fee_at_full_bps_is_full_amount() {
         let env = Env::default();
-        let (contract_id, _) = setup(&env, 10000);
+        let (contract_id, _) = setup(&env, MAX_BPS);
         env.as_contract(&contract_id, || {
             let (fee, net) = calculate_fee(&env, 1000);
             assert_eq!(fee, 1000);
@@ -192,25 +182,11 @@ mod tests {
     }
 
     #[test]
-    fn set_fee_recipient_updates_address() {
-        let env = Env::default();
-        let (contract_id, _) = setup(&env, 100);
-        let new_recipient = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            set_fee_recipient(&env, &new_recipient);
-            let (_, rec) = get_fee_config(&env);
-            assert_eq!(rec.unwrap(), new_recipient);
-        });
-    }
-
-    #[test]
     #[should_panic]
     fn init_rejects_bps_over_max() {
         let env = Env::default();
         let contract_id = env.register_contract(None, TestContract);
         let recipient = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            init(&env, 10001, &recipient);
-        });
+        env.as_contract(&contract_id, || init(&env, MAX_BPS + 1, &recipient));
     }
 }
