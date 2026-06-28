@@ -197,7 +197,11 @@ mod tests {
 
     #[test]
     fn test_invalid_transition_error_code() {
-        assert_eq!(GovError::InvalidStateTransition as u32, 4);
+        // Error codes are part of the on-chain contract interface.
+        // Current GovError mapping (audit-ready):
+        // NotASigner=1, AlreadyApproved=2, ThresholdNotMet=3,
+        // TimelockActive=4, InvalidStateTransition=5, ...
+        assert_eq!(GovError::InvalidStateTransition as u32, 5);
     }
 
     #[test]
