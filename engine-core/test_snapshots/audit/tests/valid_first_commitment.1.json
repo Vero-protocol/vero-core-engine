@@ -19,7 +19,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -30,7 +30,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": "ledger_key_contract_instance",
                 "durability": "persistent",
                 "val": {
@@ -92,25 +92,43 @@
     {
       "event": {
         "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "contract",
         "body": {
           "v0": {
             "topics": [
               {
-                "symbol": "AUDIT"
+                "symbol": "EVENT"
               },
               {
-                "symbol": "commit"
+                "symbol": "LOG"
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "u64": 1
+                  "key": {
+                    "symbol": "flags"
+                  },
+                  "val": {
+                    "u32": 257
+                  }
                 },
                 {
-                  "bytes": "31b5ccceb7b2eece59647ed1c647b5cd692422ef2e6043a4b514677cf35cfbb9"
+                  "key": {
+                    "symbol": "hash"
+                  },
+                  "val": {
+                    "bytes": "31b5ccceb7b2eece59647ed1c647b5cd692422ef2e6043a4b514677cf35cfbb9"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "value"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
                 }
               ]
             }

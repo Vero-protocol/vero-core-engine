@@ -17,7 +17,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -28,7 +28,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": "ledger_key_contract_instance",
                 "durability": "persistent",
                 "val": {
@@ -73,25 +73,43 @@
     {
       "event": {
         "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "contract",
         "body": {
           "v0": {
             "topics": [
               {
-                "symbol": "AUDIT"
+                "symbol": "EVENT"
               },
               {
-                "symbol": "commit"
+                "symbol": "LOG"
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "u64": 1
+                  "key": {
+                    "symbol": "flags"
+                  },
+                  "val": {
+                    "u32": 257
+                  }
                 },
                 {
-                  "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
+                  "key": {
+                    "symbol": "hash"
+                  },
+                  "val": {
+                    "bytes": "9dcbcf21a5a9d8a551075709cee7265d2abfe3225ee3646c7b12dcf93b79fd4e"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "value"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
                 }
               ]
             }
@@ -103,7 +121,7 @@
     {
       "event": {
         "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "diagnostic",
         "body": {
           "v0": {
@@ -135,7 +153,7 @@
     {
       "event": {
         "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "diagnostic",
         "body": {
           "v0": {

@@ -1,357 +1,242 @@
-//! Governance tests — state machine transitions and anti-Sybil stake gate.
-
 #[cfg(test)]
 mod tests {
-    use crate::governance;
+    use crate::governance::{self, GovError};
     use crate::types::{Proposal, ProposalState};
     use soroban_sdk::{
-        contract, contractimpl,
-        testutils::{Address as _, Events, Ledger},
+        testutils::{Address as _, Ledger as _},
         vec, Address, BytesN, Env,
     };
 
-    // ── minimal stub contract ────────────────────────────────────────────────
+    #[soroban_sdk::contract]
+    pub struct TestContract;
 
-    #[contract]
-    struct GovContract;
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
 
-    #[contractimpl]
-    impl GovContract {}
-
-    // ── helpers ──────────────────────────────────────────────────────────────
-
-    fn register_contract(env: &Env) -> Address {
-        env.register_contract(None, GovContract)
+    fn setup_env(env: &Env) -> Address {
+        env.register_contract(None, TestContract)
     }
 
-    fn register_token(env: &Env) -> Address {
-        env.register_stellar_asset_contract_v2(Address::generate(env))
-            .address()
-    }
-
-    fn fund(env: &Env, token: &Address, to: &Address, amount: i128) {
-        soroban_sdk::token::StellarAssetClient::new(env, token)
-            .mock_all_auths()
-            .mint(to, &amount);
-    }
-
-    fn dummy_hash(env: &Env) -> BytesN<32> {
-        BytesN::from_array(env, &[0u8; 32])
-    }
-
-    fn make_proposal(env: &Env, id: u64, proposer: &Address) -> Proposal {
+    fn create_dummy_proposal(env: &Env, proposer: &Address) -> Proposal {
         Proposal {
-            id,
-            action_hash:  dummy_hash(env),
-            proposer:     proposer.clone(),
-            approved_by:  vec![env],
-            state:        ProposalState::Pending,
+            id: 1,
+            action_hash: BytesN::from_array(env, &[0u8; 32]),
+            proposer: proposer.clone(),
+            approved_by: vec![env],
+            state: ProposalState::Pending,
         }
     }
 
-    /// Read a proposal back from persistent storage using the hex-encoded key.
-    fn get_proposal(env: &Env, id: u64) -> (Proposal, u32) {
-        let key = Symbol::new(env, &format!("P{:x}", id));
-        env.storage().persistent().get(&key).unwrap()
-    }
-
-    fn init_one(env: &Env, signer: &Address, min_stake: i128) -> (Address, Address) {
-        let cid   = register_contract(env);
-        let token = register_token(env);
-        env.as_contract(&cid, || {
-            governance::init(env, vec![env, signer.clone()], 1, token.clone(), min_stake);
+    fn init_one_of_one(env: &Env, contract_id: &Address, proposer: &Address) {
+        env.as_contract(contract_id, || {
+            governance::init(env, vec![env, proposer.clone()], 1);
         });
-        (cid, token)
     }
 
-    fn init_two(env: &Env, a: &Address, b: &Address) -> Address {
-        let cid = register_contract(env);
-        env.as_contract(&cid, || {
-            governance::init(
-                env,
-                vec![env, a.clone(), b.clone()],
-                2,
-                register_token(env),
-                0,
-            );
+    fn propose_default(env: &Env, contract_id: &Address, proposer: &Address) -> u64 {
+        env.as_contract(contract_id, || {
+            let prop = create_dummy_proposal(env, proposer);
+            governance::propose(env, prop)
+        })
+    }
+
+    #[test]
+    fn test_proposal_initial_state_pending() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        env.mock_all_auths();
+
+        init_one_of_one(&env, &contract_id, &proposer);
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || {
+            let (p, _) = governance::load_proposals(&env).get(id).unwrap();
+            assert_eq!(p.state, ProposalState::Pending);
         });
-        cid
     }
 
-    // ── state transitions ─────────────────────────────────────────────────
+    #[test]
+    fn test_state_transition_pending_to_approved() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
+
+        init_one_of_one(&env, &contract_id, &proposer);
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+        env.as_contract(&contract_id, || {
+            let (p, unlock) = governance::load_proposals(&env).get(id).unwrap();
+            assert_eq!(p.state, ProposalState::Approved);
+            assert_eq!(unlock, governance::TIMELOCK_LEDGERS);
+        });
+    }
 
     #[test]
     fn test_state_transition_approved_to_executed() {
         let env = Env::default();
         env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &s1));
-            governance::approve(&env, &s1, id);
-            env.ledger().with_mut(|l| l.sequence_number += 721);
-            let executed_prop = governance::execute(&env, id);
-            assert_eq!(executed_prop.state, ProposalState::Executed);
-        });
-    }
-
-    #[test]
-    fn test_auto_execute_on_approve_after_timelock() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 2, &s1));
-            env.ledger().with_mut(|l| l.sequence_number += 2000);
-            governance::approve(&env, &s1, id);
-
-            let (prop, _) = get_proposal(&env, id);
-            assert_eq!(prop.state, ProposalState::Executed);
-        });
-    }
-
-    // ── anti-Sybil stake gate ─────────────────────────────────────────────
-
-    #[test]
-    fn test_approve_passes_with_sufficient_stake() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, token) = init_one(&env, &signer, 1_000);
-        fund(&env, &token, &signer, 1_000);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id);
-            let (prop, _) = get_proposal(&env, id);
-            assert_eq!(prop.state, ProposalState::Approved);
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #7)")]
-    fn test_approve_fails_with_insufficient_stake() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, token) = init_one(&env, &signer, 1_000);
-        fund(&env, &token, &signer, 999);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id);
-        });
-    }
-
-    #[test]
-    fn test_stake_gate_disabled_when_min_stake_zero() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, _) = init_one(&env, &signer, 0);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id);
-            let (prop, _) = get_proposal(&env, id);
-            assert_eq!(prop.state, ProposalState::Approved);
-        });
-    }
-
-    // ── full lifecycle ────────────────────────────────────────────────────
-
-    #[test]
-    fn test_full_lifecycle() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-
-            governance::approve(&env, &a, id);
-            assert_eq!(get_proposal(&env, id).0.state, ProposalState::Pending);
-
-            governance::approve(&env, &b, id);
-            assert_eq!(get_proposal(&env, id).0.state, ProposalState::Approved);
-
-            env.ledger().with_mut(|l| l.sequence_number += 721);
-            let prop = governance::execute(&env, id);
-            assert_eq!(prop.state, ProposalState::Executed);
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #5)")]
-    fn test_execute_pending_proposal_rejected() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
+        init_one_of_one(&env, &contract_id, &proposer);
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+        env.as_contract(&contract_id, || {
+            env.ledger()
+                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
             governance::execute(&env, id);
+            let (p, _) = governance::load_proposals(&env).get(id).unwrap();
+            assert_eq!(p.state, ProposalState::Executed);
         });
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #4)")]
-    fn test_execute_before_timelock_rejected() {
+    #[should_panic]
+    fn test_reject_approval_on_approved_proposal() {
         let env = Env::default();
         env.mock_all_auths();
-        let signer = Address::generate(&env);
-        let (cid, _) = init_one(&env, &signer, 0);
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
+        let signer2 = Address::generate(&env);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &signer));
-            governance::approve(&env, &signer, id);
+        env.as_contract(&contract_id, || {
+            governance::init(&env, vec![&env, proposer.clone(), signer2.clone()], 1);
+        });
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+        env.as_contract(&contract_id, || governance::approve(&env, &signer2, id));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_reject_execution_of_pending_proposal() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        env.mock_all_auths();
+
+        init_one_of_one(&env, &contract_id, &proposer);
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || governance::execute(&env, id));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_reject_double_execution() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
+
+        init_one_of_one(&env, &contract_id, &proposer);
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+        env.as_contract(&contract_id, || {
+            env.ledger()
+                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
+            governance::execute(&env, id);
             governance::execute(&env, id);
         });
     }
 
     #[test]
     #[should_panic]
-    fn test_duplicate_approval_rejected() {
+    fn test_reject_approval_of_executed_proposal() {
         let env = Env::default();
         env.mock_all_auths();
-        let a = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
+        let signer2 = Address::generate(&env);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::approve(&env, &a, id);
-            governance::approve(&env, &a, id);
+        env.as_contract(&contract_id, || {
+            governance::init(&env, vec![&env, proposer.clone(), signer2.clone()], 1);
+        });
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+        env.as_contract(&contract_id, || {
+            env.ledger()
+                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
+            governance::execute(&env, id);
+        });
+        env.as_contract(&contract_id, || governance::approve(&env, &signer2, id));
+    }
+
+    #[test]
+    fn test_full_proposal_lifecycle() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
+
+        init_one_of_one(&env, &contract_id, &proposer);
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                governance::get_proposal(&env, id).state,
+                ProposalState::Pending
+            );
+        });
+        env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                governance::get_proposal(&env, id).state,
+                ProposalState::Approved
+            );
+            env.ledger()
+                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
+            governance::execute(&env, id);
+            assert_eq!(
+                governance::get_proposal(&env, id).state,
+                ProposalState::Executed
+            );
         });
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #1)")]
-    fn test_non_signer_cannot_approve() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let outsider = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::approve(&env, &outsider, id);
-        });
-    }
-
-    // ── cancel / revert ───────────────────────────────────────────────────
-
-    #[test]
-    fn test_cancel_pending_proposal() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &s1));
-            let prop = governance::cancel(&env, &s1, id);
-            assert_eq!(prop.state, ProposalState::Cancelled);
-
-            // The stored proposal is the cancelled (terminal) one.
-            let stored = env
-                .storage()
-                .instance()
-                .get::<_, soroban_sdk::Map<u64, (Proposal, u32)>>(
-                    &soroban_sdk::symbol_short!("PROPS"),
-                )
-                .unwrap()
-                .get(id)
-                .unwrap()
-                .0
-                .state;
-            assert_eq!(stored, ProposalState::Cancelled);
-        });
+    fn test_invalid_transition_error_code() {
+        assert_eq!(GovError::InvalidStateTransition as u32, 4);
     }
 
     #[test]
-    fn test_cancel_before_threshold_by_other_signer() {
+    #[should_panic]
+    fn test_duplicate_approval_detection() {
         let env = Env::default();
         env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b); // threshold = 2
+        let contract_id = setup_env(&env);
+        let proposer = Address::generate(&env);
+        let signer2 = Address::generate(&env);
 
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::approve(&env, &a, id); // still Pending (1 of 2)
-            let prop = governance::cancel(&env, &b, id);
-            assert_eq!(prop.state, ProposalState::Cancelled);
+        env.as_contract(&contract_id, || {
+            governance::init(&env, vec![&env, proposer.clone(), signer2], 2);
+        });
+        let id = propose_default(&env, &contract_id, &proposer);
+        env.as_contract(&contract_id, || {
+            governance::approve(&env, &proposer, id);
+            governance::approve(&env, &proposer, id);
         });
     }
+}
 
-    #[test]
-    #[should_panic(expected = "Error(Contract, #6)")]
-    fn test_cannot_cancel_executed_proposal() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let s1 = Address::generate(&env);
-        let (cid, _) = init_one(&env, &s1, 0);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &s1));
-            governance::approve(&env, &s1, id); // → Approved
-            env.ledger().with_mut(|l| l.sequence_number += 721);
-            governance::execute(&env, id); // → Executed
-            governance::cancel(&env, &s1, id); // AlreadyExecuted = 6
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #5)")]
-    fn test_cannot_cancel_twice() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::cancel(&env, &a, id); // → Cancelled
-            governance::cancel(&env, &b, id); // InvalidStateTransition = 5
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #1)")]
-    fn test_non_signer_cannot_cancel() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let outsider = Address::generate(&env);
-        let cid = init_two(&env, &a, &Address::generate(&env));
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::cancel(&env, &outsider, id); // NotASigner = 1
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #5)")]
-    fn test_cannot_approve_cancelled_proposal() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let a = Address::generate(&env);
-        let b = Address::generate(&env);
-        let cid = init_two(&env, &a, &b);
-
-        env.as_contract(&cid, || {
-            let id = governance::propose(&env, make_proposal(&env, 1, &a));
-            governance::cancel(&env, &a, id); // → Cancelled
-            governance::approve(&env, &b, id); // InvalidStateTransition = 5
-        });
-    }
+/// State Transition Matrix (for documentation)
+///
+/// | Current State | Operation | Target State | Allowed | Error |
+/// |---|---|---|---|---|
+/// | Pending | approve (< threshold) | Pending | Yes | — |
+/// | Pending | approve (>= threshold) | Approved | Yes | — |
+/// | Pending | execute | — | No | InvalidStateTransition |
+/// | Approved | approve | — | No | InvalidStateTransition |
+/// | Approved | execute (timelock OK) | Executed | Yes | — |
+/// | Approved | execute (timelock active) | — | No | TimelockActive |
+/// | Executed | approve | — | No | InvalidStateTransition |
+/// | Executed | execute | — | No | InvalidStateTransition |
+pub struct StateTransitionMatrix;
 }

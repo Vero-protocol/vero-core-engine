@@ -1,12 +1,18 @@
 #![no_std]
+
 pub mod audit;
-pub mod governance;
-pub mod circuit_breaker;
-pub mod treasury;
 pub mod burn;
+pub mod circuit_breaker;
+pub mod core;
 pub mod emergency_recovery;
+pub mod event_struct;
+pub mod event_utils;
+pub mod governance;
+pub mod guards;
 pub mod protocol_fee;
+pub mod treasury;
 pub mod types;
+pub mod upgrade;
 pub mod version;
 pub mod event_struct;
 pub mod event_utils;
@@ -14,5 +20,7 @@ pub mod core;
 
 #[cfg(test)]
 mod governance_tests;
+#[cfg(test)]
+mod reentrancy_tests;
 #[cfg(test)]
 mod treasury_tests;
