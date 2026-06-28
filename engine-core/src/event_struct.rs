@@ -11,17 +11,34 @@
 //! `value` carries a u64 primary value (sequence, proposal id, amount, …).
 //! `hash`  carries an optional 32-byte hash. All-zero when unused.
 
-use soroban_sdk::contracttype;
+// Compact event encoding — bitmask-based event struct.
+//
+// Replaces the previous fat `Event { event_type: BytesN<32>, action: BytesN<32>, payload: Map }`
+// which wasted 64 bytes of zeroed data and allocated an expensive `Map<Symbol,Val>` on every call.
+//
+// ## Encoding
+//
+// `flags` packs module id (bits 0–7) and action id (bits 8–15) into a single `u32`:
+//
+// ```text
+// bits  0– 7 : module id  (MOD_*)
+// bits  8–15 : action id  (ACT_*)
+// bits 16–31 : reserved for future use / version
+// ```
+//
+// `value` carries a u64 primary value (sequence, proposal id, amount, …).
+// `hash`  carries an optional 32-byte hash (state_hash, action_hash). Zero if unused.
 
 // ── module ids ────────────────────────────────────────────────────────────────
 
-pub const MOD_AUDIT:    u32 = 0x01;
-pub const MOD_GOV:      u32 = 0x02;
+pub const MOD_AUDIT: u32 = 0x01;
+pub const MOD_GOV: u32 = 0x02;
 pub const MOD_TREASURY: u32 = 0x03;
-pub const MOD_CB:       u32 = 0x04;
-pub const MOD_BURN:     u32 = 0x05;
+pub const MOD_CB: u32 = 0x04;
+pub const MOD_BURN: u32 = 0x05;
 pub const MOD_RECOVERY: u32 = 0x06;
-pub const MOD_FEE:      u32 = 0x07;
+pub const MOD_FEE: u32 = 0x07;
+pub const MOD_UPGRADE: u32 = 0x08;
 
 // ── action ids ────────────────────────────────────────────────────────────────
 
@@ -40,7 +57,7 @@ pub const ACT_FEE_TRANSFER: u32 = 0x0C << 8;
 
 /// Compact event struct — flat, zero heap allocation.
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompactEvent {
     /// Packed module + action bitmask.
     pub flags: u32,

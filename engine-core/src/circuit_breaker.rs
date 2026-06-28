@@ -8,6 +8,7 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, B
 use crate::event_struct::{ACT_RESET, ACT_TRIP, MOD_CB};
 use crate::event_utils::publish_event;
 use crate::types::BreakerState;
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
 
 const KEY_STATE:    Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
@@ -18,8 +19,11 @@ pub enum BreakerError {
     CircuitOpen    = 1,
     NotGuardian    = 2,
     AlreadyInState = 3,
+    InvalidGuardianSet = 4,
+    AlreadyInitialized = 5,
 }
 
+/// Initialise the circuit breaker in the closed state.
 pub fn init(env: &Env, guardians: Vec<Address>) {
     env.storage().instance().set(&KEY_STATE, &BreakerState::Closed);
     env.storage().instance().set(&KEY_GUARDIAN, &guardians);
@@ -31,12 +35,17 @@ pub fn assert_closed(env: &Env) {
         .storage()
         .instance()
         .get(&KEY_STATE)
-        .unwrap_or(BreakerState::Closed);
-    if state == BreakerState::Open {
+        .unwrap_or(BreakerState::Closed)
+}
+
+/// Panics with `CircuitOpen` when the breaker is tripped.
+pub fn assert_closed(env: &Env) {
+    if state(env) == BreakerState::Open {
         panic_with_error!(env, BreakerError::CircuitOpen);
     }
 }
 
+/// Trip the breaker — halts guarded state transitions. Requires guardian auth.
 pub fn trip(env: &Env, guardian: &Address) {
     crate::non_reentrant!(env);
     guardian.require_auth();
@@ -45,6 +54,7 @@ pub fn trip(env: &Env, guardian: &Address) {
     publish_event(env, MOD_CB | ACT_TRIP, 0, BytesN::from_array(env, &[0u8; 32]));
 }
 
+/// Reset the breaker — resumes guarded state transitions. Requires guardian auth.
 pub fn reset(env: &Env, guardian: &Address) {
     crate::non_reentrant!(env);
     guardian.require_auth();
@@ -53,16 +63,12 @@ pub fn reset(env: &Env, guardian: &Address) {
     publish_event(env, MOD_CB | ACT_RESET, 0, BytesN::from_array(env, &[0u8; 32]));
 }
 
-fn set_state(env: &Env, state: BreakerState) {
-    let current: BreakerState = env
-        .storage()
-        .instance()
-        .get(&KEY_STATE)
-        .unwrap_or(BreakerState::Closed);
-    if current == state {
+fn set_state(env: &Env, next: BreakerState) {
+    let current = state(env);
+    if current == next {
         panic_with_error!(env, BreakerError::AlreadyInState);
     }
-    env.storage().instance().set(&KEY_STATE, &state);
+    env.storage().instance().set(&KEY_STATE, &next);
 }
 
 fn require_guardian(env: &Env, caller: &Address) {
@@ -117,10 +123,10 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, TestContract);
+        let guardian = Address::generate(&env);
+        let rogue = Address::generate(&env);
         env.as_contract(&contract_id, || {
-            let g = Address::generate(&env);
-            let rogue = Address::generate(&env);
-            init(&env, vec![&env, g.clone()]);
+            init(&env, vec![&env, guardian]);
             trip(&env, &rogue);
         });
     }
