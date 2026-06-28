@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine-core"]
+members = ["engine-core", "src/audit-guard"]
 resolver = "2"
 
 [profile.release]

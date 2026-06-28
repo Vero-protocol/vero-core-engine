@@ -14,6 +14,7 @@ pub enum UpgradeError {
 
 /// Upgrade the current contract to `new_wasm_hash` after multi-sig approval.
 pub fn upgrade(env: &Env, proposal_id: u64, new_wasm_hash: BytesN<32>) {
+    crate::circuit_breaker::assert_closed(env);
     if new_wasm_hash.to_array() == [0u8; 32] {
         panic_with_error!(env, UpgradeError::InvalidWasmHash);
     }
