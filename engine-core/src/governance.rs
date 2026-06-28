@@ -13,7 +13,8 @@ use crate::event_struct::{ACT_APPROVE, ACT_EXECUTE, ACT_PROPOSE, MOD_GOV};
 use crate::event_utils::{publish_event, zero_hash};
 use crate::types::{Proposal, ProposalState};
 use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, vec, Address, Env, Map, Symbol, Vec,
+    contracterror, panic_with_error, symbol_short, token, vec, Address, BytesN, Env, Map, Symbol,
+    Vec,
 };
 
 const KEY_PROPOSALS: Symbol = symbol_short!("PROPS");
@@ -143,6 +144,27 @@ fn require_stake(env: &Env, signer: &Address) {
         panic_with_error!(env, GovError::InvalidStake);
     }
 }
+
+/// Submit a new governance proposal.
+///
+/// The proposal is normalised to `Pending` and stored with an initial unlock
+/// ledger of `0`. The proposer must be a configured signer.
+pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
+    crate::non_reentrant!(env);
+    assert_closed(env);
+
+    proposal.proposer.require_auth();
+    require_signer(env, &proposal.proposer);
+
+    let mut proposals = load_proposals(env);
+    if proposals.contains_key(proposal.id) {
+        panic_with_error!(env, GovError::ProposalAlreadyExists);
+    }
+
+    proposal.state = ProposalState::Pending;
+    proposal.approved_by = vec![env];
+    proposals.set(proposal.id, (proposal.clone(), 0u32));
+    save_proposals(env, &proposals);
 
     publish_event(
         env,

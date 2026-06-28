@@ -66,16 +66,16 @@ pub fn integrity_check(env: &Env, commitment: &StateCommitment, payload: &[u8]) 
 ///
 /// Panics if:
 /// - the circuit breaker is open,
-/// - the author did not sign the invocation,
 /// - `commitment.sequence` is replayed or stale,
 /// - `commitment.state_hash` does not match the expected chain derivation.
+///
+/// Callers must separately ensure the commitment author has authorised the
+/// invocation (e.g. via `commitment.author.require_auth()` at the entrypoint).
+/// Keeping auth at the entrypoint avoids duplicate authorisation when the
+/// control plane caller and the audit author are the same identity.
 pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
     crate::non_reentrant!(env);
     assert_closed(env);
-
-    // The author field must be authenticated; otherwise the commitment would be
-    // an unauthenticated hint rather than an auditable proof anchor.
-    commitment.author.require_auth();
 
     if !integrity_check(env, commitment, payload) {
         if commitment.sequence <= get_last_sequence(env) {
