@@ -1,14 +1,18 @@
-//! ZK-audit layer — state-commitment validation for the V-Zero Protocol.
+//! ZK-audit layer: ordered state-commitment validation.
 //!
-//! Each contract call that mutates state must pass through `validate_transition`.
-//! Off-chain provers submit `StateCommitment`s; this module verifies ordering
-//! and hash integrity before they are persisted.
+//! State-changing code can call `validate_transition` with an off-chain produced
+//! commitment. The module enforces circuit-breaker status, author authentication,
+//! monotonic sequencing, and deterministic hash chaining:
+//!
+//! `state_hash = sha256(previous_state_hash || sequence || payload)`.
 
 use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Symbol};
 
-use crate::types::StateCommitment;
 use crate::circuit_breaker::assert_closed;
+use crate::event_struct::{ACT_COMMIT, MOD_AUDIT};
+use crate::event_utils::publish_event;
+use crate::types::StateCommitment;
 
 const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -18,10 +22,9 @@ const KEY_PREV: Symbol = symbol_short!("PREV_H");
 pub enum AuditError {
     ReplayedSequence = 1,
     HashMismatch = 2,
-    AuthorUnauthorised = 3,
 }
 
-/// Compute the SHA-256 commitment hash over (prev_hash ‖ sequence ‖ payload).
+/// Compute the SHA-256 commitment hash over `(prev_hash || sequence || payload)`.
 pub fn compute_commitment(prev_hash: &[u8; 32], sequence: u64, payload: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(prev_hash);
@@ -30,56 +33,52 @@ pub fn compute_commitment(prev_hash: &[u8; 32], sequence: u64, payload: &[u8]) -
     h.finalize().into()
 }
 
-/// Validate and record a new `StateCommitment`.
-///
-/// Panics if:
-/// - `commitment.sequence` ≤ last recorded sequence (replay guard)
-/// - `commitment.state_hash` doesn't match the expected derivation
+/// Return the last accepted sequence number.
+pub fn last_sequence(env: &Env) -> u64 {
+    env.storage().instance().get(&KEY_SEQ).unwrap_or(0)
+}
+
+/// Return the last accepted state hash.
+pub fn previous_hash(env: &Env) -> BytesN<32> {
+    env.storage()
+        .instance()
+        .get(&KEY_PREV)
+        .unwrap_or_else(|| BytesN::from_array(env, &[0u8; 32]))
+}
+
+/// Validate and persist a new state commitment.
 pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
     crate::non_reentrant!(env);
-    let last_seq: u64 = env.storage().instance().get(&KEY_SEQ).unwrap_or(0);
+    assert_closed(env);
+    commitment.author.require_auth();
+
+    let last_seq = last_sequence(env);
     if commitment.sequence <= last_seq {
         panic_with_error!(env, AuditError::ReplayedSequence);
     }
 
-    let prev_hash: [u8; 32] = env
-        .storage()
-        .instance()
-        .get::<Symbol, [u8; 32]>(&KEY_PREV)
-        .unwrap_or([0u8; 32]);
-
+    let prev_hash = previous_hash(env).to_array();
     let expected = compute_commitment(&prev_hash, commitment.sequence, payload);
-    let actual: [u8; 32] = commitment.state_hash.to_array();
+    let actual = commitment.state_hash.to_array();
     if expected != actual {
         panic_with_error!(env, AuditError::HashMismatch);
     }
 
     env.storage().instance().set(&KEY_SEQ, &commitment.sequence);
-    env.storage().instance().set(&KEY_PREV, &actual);
+    env.storage().instance().set(&KEY_PREV, &commitment.state_hash);
 
-    // Single compact event — replaces the previous double-emit pattern.
     publish_event(
         env,
         MOD_AUDIT | ACT_COMMIT,
         commitment.sequence,
         commitment.state_hash.clone(),
     );
-    // Emit structured Event for audit logs
-    let mut payload = Map::new(env);
-    payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
-    payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
-    publish_event(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
 }
 
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::contract;
-
-    #[contract]
-    struct TestContract;
-
     use super::*;
-    use soroban_sdk::{testutils::Address as _, contract, contractimpl, Address, BytesN, Env};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
 
     #[contract]
     pub struct TestContract;
@@ -87,27 +86,22 @@ mod tests {
     #[contractimpl]
     impl TestContract {}
 
-    #[soroban_sdk::contract]
-    pub struct TestContract;
-
-    #[soroban_sdk::contractimpl]
-    impl TestContract {}
-
     #[test]
     fn valid_first_commitment() {
         let env = Env::default();
+        env.mock_all_auths();
         let contract_id = env.register_contract(None, TestContract);
         env.as_contract(&contract_id, || {
             let payload = b"state_payload_v1";
             let hash = compute_commitment(&[0u8; 32], 1, payload);
-
             let c = StateCommitment {
                 state_hash: BytesN::from_array(&env, &hash),
-                sequence:   1,
-                ledger:     100,
-                author:     Address::generate(&env),
+                sequence: 1,
+                ledger: 100,
+                author: Address::generate(&env),
             };
-            validate_transition(&env, &c, payload); // must not panic
+            validate_transition(&env, &c, payload);
+            assert_eq!(last_sequence(&env), 1);
         });
     }
 
@@ -115,15 +109,16 @@ mod tests {
     #[should_panic]
     fn replay_is_rejected() {
         let env = Env::default();
+        env.mock_all_auths();
         let contract_id = env.register_contract(None, TestContract);
         env.as_contract(&contract_id, || {
             let payload = b"payload";
             let hash = compute_commitment(&[0u8; 32], 1, payload);
             let c = StateCommitment {
                 state_hash: BytesN::from_array(&env, &hash),
-                sequence:   1,
-                ledger:     100,
-                author:     Address::generate(&env),
+                sequence: 1,
+                ledger: 100,
+                author: Address::generate(&env),
             };
             validate_transition(&env, &c, payload);
             validate_transition(&env, &c, payload);
