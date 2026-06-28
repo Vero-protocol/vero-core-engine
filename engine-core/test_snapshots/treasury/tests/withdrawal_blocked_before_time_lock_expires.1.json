@@ -1,11 +1,9 @@
 {
   "generators": {
-    "address": 2,
+    "address": 1,
     "nonce": 0
   },
-  "auth": [
-    []
-  ],
+  "auth": [],
   "ledger": {
     "protocol_version": 21,
     "sequence_number": 0,
@@ -38,24 +36,7 @@
                     "executable": {
                       "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     },
-                    "storage": [
-                      {
-                        "key": {
-                          "symbol": "PREV_H"
-                        },
-                        "val": {
-                          "bytes": "31b5ccceb7b2eece59647ed1c647b5cd692422ef2e6043a4b514677cf35cfbb9"
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "SEQ"
-                        },
-                        "val": {
-                          "u64": 1
-                        }
-                      }
-                    ]
+                    "storage": null
                   }
                 }
               }
@@ -111,7 +92,7 @@
                     "symbol": "flags"
                   },
                   "val": {
-                    "u32": 257
+                    "u32": 2307
                   }
                 },
                 {
@@ -119,7 +100,7 @@
                     "symbol": "hash"
                   },
                   "val": {
-                    "bytes": "31b5ccceb7b2eece59647ed1c647b5cd692422ef2e6043a4b514677cf35cfbb9"
+                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                   }
                 },
                 {
@@ -127,10 +108,67 @@
                     "symbol": "value"
                   },
                   "val": {
-                    "u64": 1
+                    "u64": 7
                   }
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 7
+                }
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "string": "failing with contract error"
+                },
+                {
+                  "u32": 7
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 7
+                }
+              }
+            ],
+            "data": {
+              "string": "escalating error to panic"
             }
           }
         }

@@ -304,7 +304,7 @@ export class EventQueue {
     try {
       const stmt = this.db.prepare(`
         DELETE FROM events
-        WHERE status = 'processed' AND processTime < ?
+        WHERE status = 'processed' AND processTime <= ?
       `);
 
       const cutoff = Date.now() - maxAgeMs;
