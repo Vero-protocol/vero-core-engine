@@ -13,7 +13,7 @@ use crate::event_struct::{ACT_APPROVE, ACT_EXECUTE, ACT_PROPOSE, MOD_GOV};
 use crate::event_utils::{publish_event, zero_hash};
 use crate::types::{Proposal, ProposalState};
 use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, vec, Address, Env, Map, Symbol, Vec,
+    contracterror, panic_with_error, symbol_short, token, vec, Address, Env, Map, Symbol, Vec, BytesN,
 };
 
 const KEY_PROPOSALS: Symbol = symbol_short!("PROPS");
@@ -143,6 +143,26 @@ fn require_stake(env: &Env, signer: &Address) {
         panic_with_error!(env, GovError::InvalidStake);
     }
 }
+
+pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
+    let signers: Vec<Address> = env
+        .storage()
+        .instance()
+        .get(&KEY_SIGNERS)
+        .unwrap_or(vec![env]);
+    if !signers.contains(&proposal.proposer) {
+        panic_with_error!(env, GovError::NotASigner);
+    }
+    proposal.proposer.require_auth();
+    
+    // Initialize state to Pending
+    proposal.state = ProposalState::Pending;
+
+    let mut props = load_proposals(env);
+    let unlock_ledger = env.ledger().sequence() + TIMELOCK_LEDGERS;
+    let id = proposal.id;
+    props.set(id, (proposal.clone(), unlock_ledger));
+    env.storage().instance().set(&KEY_PROPOSALS, &props);
 
     publish_event(
         env,
