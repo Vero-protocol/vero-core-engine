@@ -127,11 +127,13 @@ impl ControlPlane {
     /// Mutate a protocol parameter securely.
     ///
     /// Security properties:
-    /// - caller must be the initialized admin and must authorize the invocation;
-    /// - circuit breaker must be closed;
-    /// - transition must pass the audit module's chained commitment check;
-    /// - update counter uses checked arithmetic;
-    /// - reentrancy guard wraps the full mutation.
+/// - caller must be the initialized admin and must authorize the invocation;
+/// - circuit breaker must be closed;
+/// - transition must pass the audit module's chained commitment check;
+/// - numeric parameter values should be validated against protocol-defined limits
+///   before being accepted by higher-level configuration flows;
+/// - update counter uses checked arithmetic;
+/// - reentrancy guard wraps the full mutation.
     pub fn update_param(
         env: Env,
         caller: Address,
