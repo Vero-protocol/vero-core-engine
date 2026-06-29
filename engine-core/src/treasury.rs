@@ -351,6 +351,14 @@ mod tests {
     }
 
     #[test]
+fn latest_snapshot_is_none_when_empty() {
+    with_treasury_env(|env| {
+        assert!(get_latest_snapshot(env).is_none());
+        assert_eq!(snapshot_count(env), 0);
+    });
+}
+
+    #[test]
     #[should_panic]
     fn negative_balance_rejected() {
         with_treasury_env(|env| {
