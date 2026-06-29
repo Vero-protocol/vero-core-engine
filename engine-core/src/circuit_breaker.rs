@@ -1,15 +1,13 @@
 
-//! Emergency circuit-breaker — halts all state transitions when tripped.
+//! Emergency circuit breaker.
 //!
-//! Only authorised guardians may open or close the breaker.
-//! All stateful entry-points must call `assert_closed` before proceeding.
-
-use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, vec, Address, BytesN, Env, Symbol, Vec,
-};
+//! Guardians can open the breaker to halt state transitions. Stateful modules
+//! call `assert_closed` before mutating protected state.
 
 use crate::event_struct::{ACT_RESET, ACT_TRIP, MOD_CB};
 use crate::event_utils::publish_event;
+use crate::types::BreakerState;
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, BytesN, Env, Symbol, Vec};
 
 //! Emergency circuit-breaker — halts state transitions when tripped.
 
@@ -18,6 +16,7 @@ use crate::event_utils::{publish_event, zero_hash};
 
 use crate::types::BreakerState;
 use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
+
 
 const KEY_STATE: Symbol = symbol_short!("CB_STATE");
 const KEY_GUARDIAN: Symbol = symbol_short!("CB_GUARD");
@@ -29,11 +28,22 @@ pub enum BreakerError {
     NotGuardian = 2,
     AlreadyInState = 3,
     InvalidGuardianSet = 4,
+
     AlreadyInitialized = 5,
+
 }
 
 /// Initialise the circuit breaker in the closed state.
 pub fn init(env: &Env, guardians: Vec<Address>) {
+
+    if guardians.len() == 0 {
+        panic_with_error!(env, BreakerError::InvalidGuardianSet);
+    }
+    env.storage().instance().set(&KEY_STATE, &BreakerState::Closed);
+    env.storage().instance().set(&KEY_GUARDIAN, &guardians);
+}
+
+
     if env.storage().instance().has(&KEY_GUARDIAN) {
         panic_with_error!(env, BreakerError::AlreadyInitialized);
     }
@@ -56,6 +66,7 @@ pub fn init(env: &Env, guardians: Vec<Address>) {
 }
 
 /// Return the current breaker state.
+
 pub fn state(env: &Env) -> BreakerState {
     env.storage()
         .instance()
@@ -63,7 +74,9 @@ pub fn state(env: &Env) -> BreakerState {
         .unwrap_or(BreakerState::Closed)
 }
 
+
 /// Panics with `CircuitOpen` when the breaker is tripped.
+
 pub fn assert_closed(env: &Env) {
     if state(env) == BreakerState::Open {
         panic_with_error!(env, BreakerError::CircuitOpen);
@@ -77,13 +90,7 @@ pub fn trip(env: &Env, guardian: &Address) {
     require_guardian(env, guardian);
     set_state(env, BreakerState::Open);
 
-    // Single compact event — replaces previous double-emit.
-    publish_event(
-        env,
-        MOD_CB | ACT_TRIP,
-        0,
-        BytesN::from_array(env, &[0u8; 32]),
-    );
+    publish_event(env, MOD_CB | ACT_TRIP, 0, BytesN::from_array(env, &[0u8; 32]));
 
     publish_event(env, MOD_CB | ACT_TRIP, 0, zero_hash(env));
 
@@ -96,13 +103,14 @@ pub fn reset(env: &Env, guardian: &Address) {
     require_guardian(env, guardian);
     set_state(env, BreakerState::Closed);
 
-    // Single compact event — replaces previous double-emit.
-    publish_event(
-        env,
-        MOD_CB | ACT_RESET,
-        0,
-        BytesN::from_array(env, &[0u8; 32]),
-    );
+    publish_event(env, MOD_CB | ACT_RESET, 0, BytesN::from_array(env, &[0u8; 32]));
+}
+
+fn set_state(env: &Env, new_state: BreakerState) {
+    if state(env) == new_state {
+        panic_with_error!(env, BreakerError::AlreadyInState);
+    }
+    env.storage().instance().set(&KEY_STATE, &new_state);
 
     publish_event(env, MOD_CB | ACT_RESET, 0, zero_hash(env));
 
@@ -114,6 +122,7 @@ fn set_state(env: &Env, next: BreakerState) {
         panic_with_error!(env, BreakerError::AlreadyInState);
     }
     env.storage().instance().set(&KEY_STATE, &next);
+
 }
 
 fn require_guardian(env: &Env, caller: &Address) {
@@ -130,8 +139,7 @@ fn require_guardian(env: &Env, caller: &Address) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, vec, Env};
+    use soroban_sdk::{testutils::Address as _, vec, Env, contract, contractimpl};
 
     #[contract]
     pub struct TestContract;
@@ -139,7 +147,13 @@ mod tests {
     #[contractimpl]
     impl TestContract {}
 
-    use soroban_sdk::{testutils::Address as _, vec, Env};
+    #[soroban_sdk::contract]
+    pub struct TestContract;
+
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
+
+
 
 
     #[test]
@@ -160,6 +174,13 @@ mod tests {
         let guardian = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
+
+            init(&env, vec![&env, g.clone()]);
+            assert_closed(&env);
+            trip(&env, &g);
+            assert_eq!(state(&env), BreakerState::Open);
+            reset(&env, &g);
+
             init(&env, vec![&env, guardian.clone()]);
             assert_closed(&env);
         });
@@ -194,6 +215,11 @@ mod tests {
         let guardian = Address::generate(&env);
         let rogue = Address::generate(&env);
         env.as_contract(&contract_id, || {
+
+            let g = Address::generate(&env);
+            let rogue = Address::generate(&env);
+            init(&env, vec![&env, g]);
+
             init(&env, vec![&env, guardian]);
 
             trip(&env, &rogue);

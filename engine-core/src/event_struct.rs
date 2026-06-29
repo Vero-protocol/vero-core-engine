@@ -1,10 +1,9 @@
 
-//! Compact event encoding — bitmask-based event struct.
+//! Compact event encoding for audit-friendly Soroban logs.
 //!
-//! Replaces the previous fat `Event { event_type: BytesN<32>, action: BytesN<32>, payload: Map }`
-//! which wasted 64 bytes of zeroed data and allocated an expensive `Map<Symbol,Val>` on every call.
-//!
-//! ## Encoding
+//! `CompactEvent` replaces heap-heavy, loosely typed event payloads with a flat
+//! structure that is deterministic, cheap to emit, and easy for indexers to
+//! verify. The `flags` field packs a module id and action id into one `u32`.
 
 //! Compact event encoding for audit-ready Soroban logs.
 
@@ -16,8 +15,6 @@
 
 use soroban_sdk::{contracttype, BytesN};
 
-
-use soroban_sdk::{contracttype, BytesN};
 
 // Compact event encoding — bitmask-based event struct.
 //
@@ -38,7 +35,10 @@ use soroban_sdk::{contracttype, BytesN};
 // `hash`  carries an optional 32-byte hash (state_hash, action_hash). Zero if unused.
 
 
-// ── module ids ────────────────────────────────────────────────────────────────
+use soroban_sdk::{contracttype, BytesN};
+
+
+// Module ids (bits 0..=7).
 
 pub const MOD_AUDIT: u32 = 0x01;
 pub const MOD_GOV: u32 = 0x02;
@@ -47,9 +47,14 @@ pub const MOD_CB: u32 = 0x04;
 pub const MOD_BURN: u32 = 0x05;
 pub const MOD_RECOVERY: u32 = 0x06;
 pub const MOD_FEE: u32 = 0x07;
+
+
+// Action ids (bits 8..=15).
+
 pub const MOD_UPGRADE: u32 = 0x08;
 
 // ── action ids ────────────────────────────────────────────────────────────────
+
 
 pub const ACT_COMMIT: u32 = 0x01 << 8;
 pub const ACT_SNAPSHOT: u32 = 0x02 << 8;
@@ -60,9 +65,20 @@ pub const ACT_TRIP: u32 = 0x06 << 8;
 pub const ACT_RESET: u32 = 0x07 << 8;
 pub const ACT_BURN_SAFE: u32 = 0x08 << 8;
 pub const ACT_REQUEST: u32 = 0x09 << 8;
+
+pub const ACT_TRIGGERED: u32 = 0x0a << 8;
+pub const ACT_FEE: u32 = 0x0b << 8;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactEvent {
+    pub flags: u32,
+    pub value: u64,
+
 pub const ACT_TRIGGERED: u32 = 0x0A << 8;
 pub const ACT_FEE: u32 = 0x0B << 8;
 pub const ACT_UPGRADE: u32 = 0x0C << 8;
+pub const ACT_UPDATE: u32 = 0x0D << 8;
 
 /// Compact event struct emitted by all engine-core modules.
 #[contracttype]

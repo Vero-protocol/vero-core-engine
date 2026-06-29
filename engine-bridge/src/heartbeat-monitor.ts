@@ -3,14 +3,19 @@
  *
  * Performs a lightweight "pulse check" against the RPC cluster, monitors
  * the EventPropagator state, and logs system resource usage.
+ * Can route DEGRADED alerts to an AlertChannelService for external
+ * notification (email, webhook, Slack, PagerDuty, etc.).
  */
 
 import { RpcClient } from "./rpc-client";
 import { EventPropagator } from "./event-propagator";
+import type { AlertChannelService, Alert } from "./alert-channel";
 
 export interface HeartbeatOptions {
   /** Interval between heartbeat logs in ms. Defaults to 60,000 (1 min). */
   intervalMs?: number;
+  /** Optional alert channel service for DEGRADED notifications. */
+  alertService?: AlertChannelService;
 }
 
 const DEFAULT_INTERVAL = 60_000;
@@ -76,6 +81,15 @@ export class HeartbeatMonitor {
       console.log("[Heartbeat] Pulse check:", JSON.stringify(report));
     } else {
       console.warn("[Heartbeat] Pulse check DEGRADED:", JSON.stringify(report));
+
+      this.options.alertService?.send({
+        id: `heartbeat-${Date.now()}`,
+        severity: "CRITICAL",
+        title: "Engine bridge DEGRADED",
+        message: rpcError ?? "RPC cluster unreachable",
+        timestamp: report.timestamp,
+        metadata: report as unknown as Record<string, unknown>,
+      });
     }
   }
 }
