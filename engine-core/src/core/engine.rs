@@ -26,6 +26,10 @@ pub struct CoreEngine;
 #[contractimpl]
 impl CoreEngine {
     /// Initialize the core engine with an admin and an optional list of operators.
+///
+/// This establishes the initial contract interaction layer by authenticating
+/// the administrator, registering optional operators, and emitting the initial
+/// initialization event.
     pub fn initialize(env: Env, admin: Address, operators: Vec<Address>) {
         if env.storage().persistent().has(&INIT_FLAG) {
             panic_with_error!(&env, CoreError::AlreadyInitialized);
