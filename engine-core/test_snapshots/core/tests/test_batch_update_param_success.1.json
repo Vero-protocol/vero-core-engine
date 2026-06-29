@@ -12,16 +12,34 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "update_param",
+              "function_name": "batch_update_param",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "symbol": "FEE"
-                },
-                {
-                  "u64": 100
+                  "vec": [
+                    {
+                      "vec": [
+                        {
+                          "symbol": "FEE1"
+                        },
+                        {
+                          "u64": 100
+                        }
+                      ]
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "FEE2"
+                        },
+                        {
+                          "u64": 200
+                        }
+                      ]
+                    }
+                  ]
                 },
                 {
                   "map": [
@@ -38,7 +56,7 @@
                         "symbol": "ledger"
                       },
                       "val": {
-                        "u32": 100
+                        "u32": 101
                       }
                     },
                     {
@@ -46,7 +64,7 @@
                         "symbol": "sequence"
                       },
                       "val": {
-                        "u64": 1
+                        "u64": 2
                       }
                     },
                     {
@@ -54,13 +72,13 @@
                         "symbol": "state_hash"
                       },
                       "val": {
-                        "bytes": "a7cf31387e6255cca069e8ab8f1a9c043304c06167b6ba643279651b406f1475"
+                        "bytes": "4e8e1d41197ef7a08d5b52417f8128512def2b8ecfecebcdfe6b6ef818908a24"
                       }
                     }
                   ]
                 },
                 {
-                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                  "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
                 }
               ]
             }
@@ -74,16 +92,34 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "update_param",
+              "function_name": "batch_update_param",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "symbol": "FEE"
-                },
-                {
-                  "u64": 100
+                  "vec": [
+                    {
+                      "vec": [
+                        {
+                          "symbol": "FEE1"
+                        },
+                        {
+                          "u64": 100
+                        }
+                      ]
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "FEE2"
+                        },
+                        {
+                          "u64": 200
+                        }
+                      ]
+                    }
+                  ]
                 },
                 {
                   "map": [
@@ -100,7 +136,7 @@
                         "symbol": "ledger"
                       },
                       "val": {
-                        "u32": 100
+                        "u32": 101
                       }
                     },
                     {
@@ -108,7 +144,7 @@
                         "symbol": "sequence"
                       },
                       "val": {
-                        "u64": 1
+                        "u64": 2
                       }
                     },
                     {
@@ -116,13 +152,13 @@
                         "symbol": "state_hash"
                       },
                       "val": {
-                        "bytes": "a7cf31387e6255cca069e8ab8f1a9c043304c06167b6ba643279651b406f1475"
+                        "bytes": "4e8e1d41197ef7a08d5b52417f8128512def2b8ecfecebcdfe6b6ef818908a24"
                       }
                     }
                   ]
                 },
                 {
-                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                  "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
                 }
               ]
             }
@@ -175,7 +211,7 @@
                       },
                       {
                         "key": {
-                          "symbol": "FEE"
+                          "symbol": "FEE1"
                         },
                         "val": {
                           "u64": 100
@@ -183,10 +219,18 @@
                       },
                       {
                         "key": {
+                          "symbol": "FEE2"
+                        },
+                        "val": {
+                          "u64": 200
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "PREV_H"
                         },
                         "val": {
-                          "bytes": "a7cf31387e6255cca069e8ab8f1a9c043304c06167b6ba643279651b406f1475"
+                          "bytes": "4e8e1d41197ef7a08d5b52417f8128512def2b8ecfecebcdfe6b6ef818908a24"
                         }
                       },
                       {
@@ -194,7 +238,7 @@
                           "symbol": "SEQ"
                         },
                         "val": {
-                          "u64": 1
+                          "u64": 2
                         }
                       }
                     ]
@@ -359,7 +403,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "update_param"
+                "symbol": "batch_update_param"
               }
             ],
             "data": {
@@ -368,10 +412,28 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "symbol": "FEE"
-                },
-                {
-                  "u64": 100
+                  "vec": [
+                    {
+                      "vec": [
+                        {
+                          "symbol": "FEE1"
+                        },
+                        {
+                          "u64": 100
+                        }
+                      ]
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "FEE2"
+                        },
+                        {
+                          "u64": 200
+                        }
+                      ]
+                    }
+                  ]
                 },
                 {
                   "map": [
@@ -388,7 +450,7 @@
                         "symbol": "ledger"
                       },
                       "val": {
-                        "u32": 100
+                        "u32": 101
                       }
                     },
                     {
@@ -396,7 +458,7 @@
                         "symbol": "sequence"
                       },
                       "val": {
-                        "u64": 1
+                        "u64": 2
                       }
                     },
                     {
@@ -404,13 +466,13 @@
                         "symbol": "state_hash"
                       },
                       "val": {
-                        "bytes": "a7cf31387e6255cca069e8ab8f1a9c043304c06167b6ba643279651b406f1475"
+                        "bytes": "4e8e1d41197ef7a08d5b52417f8128512def2b8ecfecebcdfe6b6ef818908a24"
                       }
                     }
                   ]
                 },
                 {
-                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                  "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
                 }
               ]
             }
@@ -449,7 +511,7 @@
                     "symbol": "hash"
                   },
                   "val": {
-                    "bytes": "a7cf31387e6255cca069e8ab8f1a9c043304c06167b6ba643279651b406f1475"
+                    "bytes": "4e8e1d41197ef7a08d5b52417f8128512def2b8ecfecebcdfe6b6ef818908a24"
                   }
                 },
                 {
@@ -457,7 +519,7 @@
                     "symbol": "value"
                   },
                   "val": {
-                    "u64": 1
+                    "u64": 2
                   }
                 }
               ]
@@ -479,7 +541,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "update_param"
+                "symbol": "batch_update_param"
               }
             ],
             "data": "void"

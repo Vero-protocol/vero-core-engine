@@ -36,9 +36,11 @@ impl CoreEngine {
         env.storage().persistent().set(&ADMIN_KEY, &admin);
         env.storage().persistent().set(&INIT_FLAG, &true);
 
-        for operator in operators.iter() {
-            env.storage().persistent().set(&operator, &EngineRole::Operator);
-        }
+       if !operators.is_empty() {
+    for operator in operators.iter() {
+        env.storage().persistent().set(&operator, &EngineRole::Operator);
+    }
+}
         
         env.storage().persistent().set(&admin, &EngineRole::Admin);
 
