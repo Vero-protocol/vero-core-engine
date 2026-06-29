@@ -5,6 +5,8 @@
 //! adheres to Soroban/Rust security standards.
 
 use soroban_sdk::{contract, contractimpl, contracterror, panic_with_error, Address, BytesN, Env, Symbol, Bytes};
+extern crate alloc;
+
 use crate::{audit, types::StateCommitment};
 
 const ADMIN_KEY: Symbol = soroban_sdk::symbol_short!("ADMIN");
