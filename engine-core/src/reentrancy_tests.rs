@@ -2,29 +2,40 @@
 
 #[cfg(test)]
 mod tests {
+
+    use crate::guards::{enter_reentrancy_guard, exit_reentrancy_guard};
+    use soroban_sdk::{contract, contractimpl, Env};
+
     use crate::guards::enter_reentrancy_guard;
     use soroban_sdk::{contract, contractimpl, Address, Env};
 
+
     #[contract]
-    pub struct ReentrantContract;
+    pub struct TestContract;
 
     #[contractimpl]
-    impl ReentrantContract {
-        pub fn call_self(env: Env, addr: Address) {
-            enter_reentrancy_guard(&env);
-            // Attempt reentrant call to same function
-            let client = ReentrantContractClient::new(&env, &addr);
-            client.call_self(&addr);
-        }
-    }
+    impl TestContract {}
 
     #[test]
     #[should_panic]
-    fn test_reentrancy_guard_panics_on_reentry() {
+    fn guard_panics_when_entered_twice() {
         let env = Env::default();
-        let contract_id = env.register_contract(None, ReentrantContract);
-        let client = ReentrantContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            enter_reentrancy_guard(&env);
+            enter_reentrancy_guard(&env);
+        });
+    }
 
-        client.call_self(&contract_id);
+    #[test]
+    fn guard_can_be_reentered_after_exit() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TestContract);
+        env.as_contract(&contract_id, || {
+            enter_reentrancy_guard(&env);
+            exit_reentrancy_guard(&env);
+            enter_reentrancy_guard(&env);
+            exit_reentrancy_guard(&env);
+        });
     }
 }
