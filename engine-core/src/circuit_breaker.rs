@@ -13,6 +13,7 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, B
 
 use crate::event_struct::{ACT_RESET, ACT_TRIP, MOD_CB};
 use crate::event_utils::{publish_event, zero_hash};
+
 use crate::types::BreakerState;
 use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, Env, Symbol, Vec};
 
@@ -112,6 +113,7 @@ fn set_state(env: &Env, new_state: BreakerState) {
     env.storage().instance().set(&KEY_STATE, &new_state);
 
     publish_event(env, MOD_CB | ACT_RESET, 0, zero_hash(env));
+
 }
 
 fn set_state(env: &Env, next: BreakerState) {
@@ -150,6 +152,7 @@ mod tests {
 
     #[soroban_sdk::contractimpl]
     impl TestContract {}
+
 
 
     #[test]

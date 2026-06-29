@@ -14,6 +14,7 @@
 
 use soroban_sdk::{contracttype, BytesN};
 
+
 // Compact event encoding — bitmask-based event struct.
 //
 // Replaces the previous fat `Event { event_type: BytesN<32>, action: BytesN<32>, payload: Map }`

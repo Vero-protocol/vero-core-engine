@@ -12,6 +12,14 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Sy
 
 //! ZK-audit layer — state-commitment validation for the Vero Protocol.
 //!
+
+//! Each contract call that mutates state must pass through `validate_transition`.
+//! Off-chain provers submit `StateCommitment`s; this module verifies ordering
+//! and hash integrity before they are persisted.
+
+use sha2::{Digest, Sha256};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol, Map, BytesN, IntoVal};
+
 //! Every state-changing control-plane path can anchor its transition here. The
 //! commitment chain is deliberately simple and audit-friendly:
 //!
@@ -22,6 +30,10 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Sy
 
 
 use crate::circuit_breaker::assert_closed;
+
+use crate::event_utils::{publish_event, publish_event_legacy};
+use crate::event_struct::{MOD_AUDIT, ACT_COMMIT};
+
 use crate::event_struct::{ACT_COMMIT, MOD_AUDIT};
 use crate::event_utils::publish_event;
 use crate::types::StateCommitment;
@@ -151,6 +163,13 @@ pub(crate) fn validate_transition_inner(
         commitment.sequence,
         commitment.state_hash.clone(),
     );
+
+    // Emit structured Event for audit logs
+    let mut payload = Map::new(env);
+    payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
+    payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
+    publish_event_legacy(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
+
 }
 
 #[cfg(test)]
@@ -167,6 +186,7 @@ mod tests {
 
 
     use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+
 
     #[soroban_sdk::contract]
     pub struct TestContract;
