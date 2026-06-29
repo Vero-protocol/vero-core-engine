@@ -302,6 +302,11 @@ export class EventQueue {
    */
   cleanup(maxAgeMs: number = 24 * 60 * 60 * 1000): number {
     try {
+      if (maxAgeMs <= 0) {
+        const result = this.db.prepare("DELETE FROM events WHERE status = 'processed'").run();
+        return result.changes;
+      }
+
       const stmt = this.db.prepare(`
         DELETE FROM events
         WHERE status = 'processed' AND processTime <= ?
