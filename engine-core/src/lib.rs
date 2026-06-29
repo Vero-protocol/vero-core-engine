@@ -6,6 +6,7 @@ extern crate alloc;
 pub mod audit;
 pub mod burn;
 pub mod circuit_breaker;
+pub mod core;
 pub mod emergency_recovery;
 pub mod event_struct;
 pub mod event_utils;

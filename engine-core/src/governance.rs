@@ -99,7 +99,8 @@ pub fn propose(env: &Env, proposal: Proposal) -> u64 {
     InvalidStake = 8,
     AlreadyInitialized = 9,
     ProposalAlreadyExists = 10,
-    ArithmeticOverflow = 11,
+    InvalidProposal = 11,
+    ArithmeticOverflow = 12,
 }
 
 pub fn init(env: &Env, signers: Vec<Address>, threshold: u32) {

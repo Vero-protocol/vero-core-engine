@@ -137,8 +137,7 @@ fn require_guardian(env: &Env, caller: &Address) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, vec, Env};
+    use soroban_sdk::{testutils::Address as _, vec, Env, contract, contractimpl};
 
     #[contract]
     pub struct TestContract;
@@ -146,7 +145,11 @@ mod tests {
     #[contractimpl]
     impl TestContract {}
 
-    use soroban_sdk::{testutils::Address as _, vec, Env};
+    #[soroban_sdk::contract]
+    pub struct TestContract;
+
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
 
 
     #[test]
