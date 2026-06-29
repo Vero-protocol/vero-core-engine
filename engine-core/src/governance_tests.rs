@@ -62,6 +62,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -79,6 +80,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -99,6 +101,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
@@ -130,6 +133,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -149,6 +153,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
@@ -170,6 +175,7 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
+        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -197,10 +203,6 @@ mod tests {
 
     #[test]
     fn test_invalid_transition_error_code() {
-        // Error codes are part of the on-chain contract interface.
-        // Current GovError mapping (audit-ready):
-        // NotASigner=1, AlreadyApproved=2, ThresholdNotMet=3,
-        // TimelockActive=4, InvalidStateTransition=5, ...
         assert_eq!(GovError::InvalidStateTransition as u32, 5);
     }
 
@@ -222,6 +224,7 @@ mod tests {
             governance::approve(&env, &proposer, id);
         });
     }
+}
 
 /// State Transition Matrix (for documentation)
 ///
@@ -235,5 +238,6 @@ mod tests {
 /// | Approved | execute (timelock active) | — | No | TimelockActive |
 /// | Executed | approve | — | No | InvalidStateTransition |
 /// | Executed | execute | — | No | InvalidStateTransition |
+#[allow(dead_code)]
 pub struct StateTransitionMatrix;
 }

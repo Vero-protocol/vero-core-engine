@@ -1,58 +1,51 @@
 //! Vero Protocol Control Plane Foundation
 //!
-//! Orchestrates administrative functionality and enforces ZK-ready integrity checks
-//! via the `audit::validate_transition` hook.
-//!
-//! Security properties (audit-ready):
-//! - Zero-address protection on admin init / transfer (#112)
-//! - Administrative parameter sanitization with bounds checking (#110)
-//! - Circuit-breaker pause integration (#118)
-//! - 2-step admin transfer to prevent lockout
-//! - Semantic versioning constants with on-chain tracking (#115)
-//! - Re-entrancy guarded state mutations
-//! - ZK integrity commitment validation on every param update
-//! - Event emission for all state changes
+//! This module exposes the hardened administrative surface for `engine-core`.
+//! Every state-changing control-plane path is authenticated, circuit-breaker
+//! aware, reentrancy guarded, and anchored through the ZK-ready audit commitment
+//! chain before mutating protocol configuration.
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, panic_with_error, symbol_short,
-    Address, BytesN, Env, String, Symbol,
+    contract, contracterror, contractimpl, panic_with_error, symbol_short, Address, Bytes, BytesN,
+    Env, Map, Symbol,
 };
 
-use crate::audit::validate_transition;
-use crate::circuit_breaker::{assert_closed, state as breaker_state};
-use crate::types::{BreakerState, StateCommitment};
-use crate::version::{
-    self, contract_version, get_stored_version, init_version, version as get_version_tuple,
-    version_string,
-};
+use crate::audit;
+use crate::circuit_breaker;
+use crate::event_struct::{ACT_EXECUTE, ACT_PROPOSE, MOD_GOV};
+use crate::event_utils::publish_event;
+use crate::types::{Proposal, StateCommitment};
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
-const KEY_PENDING_ADMIN: Symbol = symbol_short!("PEND_ADM");
+const KEY_INIT: Symbol = symbol_short!("CP_INIT");
+const KEY_PARAM_COUNT: Symbol = symbol_short!("P_COUNT");
+const KEY_LAST_PARAM: Symbol = symbol_short!("LASTPAR");
 
-// Parameter keys (whitelist for sanitization)
-const PARAM_FEE: Symbol = symbol_short!("FEE");
-const PARAM_THRESH: Symbol = symbol_short!("THRESH");
-const PARAM_TLCK: Symbol = symbol_short!("TLCK");
-const PARAM_LIMIT: Symbol = symbol_short!("LIMIT");
-
-// Parameter bounds (sanitization - Issue #110)
-const FEE_MIN: u64 = 0;
-const FEE_MAX: u64 = 10_000; // basis points, 100%
-
-const THRESH_MIN: u64 = 1;
-const THRESH_MAX: u64 = 100;
-
-const TLCK_MIN: u64 = 1;
-const TLCK_MAX: u64 = 1_000_000; // ~ 5 days of ledgers
-
-const LIMIT_MIN: u64 = 0;
-const LIMIT_MAX: u64 = u64::MAX / 2;
-
-// Events
-const EVT_PARAM_UPDATED: Symbol = symbol_short!("PRM_UPD");
-const EVT_ADMIN_XFER_INIT: Symbol = symbol_short!("ADM_XFR");
-const EVT_ADMIN_ACCEPTED: Symbol = symbol_short!("ADM_ACC");
-const EVT_INITIALIZED: Symbol = symbol_short!("INIT_CP");
+/// Reserved keys that may not be modified through `update_param` to prevent
+/// accidental corruption of internal engine state.
+const RESERVED_KEYS: &[Symbol] = &[
+    symbol_short!("ADMIN"),
+    symbol_short!("SEQ"),
+    symbol_short!("PREV_H"),
+    symbol_short!("CB_STATE"),
+    symbol_short!("CB_GUARD"),
+    symbol_short!("PROPS"),
+    symbol_short!("SIGNERS"),
+    symbol_short!("THRESH"),
+    symbol_short!("MINSTAKE"),
+    symbol_short!("STKTOK"),
+    symbol_short!("ER_ADMINS"),
+    symbol_short!("ER_THRESH"),
+    symbol_short!("ER_APPRVS"),
+    symbol_short!("ER_DEST"),
+    symbol_short!("ER_TOKEN"),
+    symbol_short!("ER_AMOUNT"),
+    symbol_short!("FEE_BPS"),
+    symbol_short!("FEE_RCP"),
+    symbol_short!("SNAPC"),
+    symbol_short!("SNAPL"),
+    symbol_short!("OUTFLOWS"),
+];
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -61,11 +54,8 @@ pub enum ControlPlaneError {
     AlreadyInitialized = 1,
     Unauthorized = 2,
     NotInitialized = 3,
-    InvalidParam = 4,
-    ParamOutOfBounds = 5,
-    ZeroAddress = 6,
-    AdminTransferNotPending = 7,
-    InvalidAdmin = 8,
+    InvalidPayload = 4,
+    ArithmeticOverflow = 5,
 }
 
 #[contract]
@@ -75,44 +65,73 @@ pub struct ControlPlane;
 impl ControlPlane {
     /// Initialize the control plane with a master admin.
     ///
-    /// Security:
-    /// - Zero-address protection (#112)
-    /// - Rejects double-initialization
-    /// - Initialises on-chain version tracking (#115)
-    /// - Emits Initialized event
+    /// The admin must authorize initialization, making deployment races
+    /// auditable and preventing an arbitrary account from installing itself as
+    /// administrator without a matching signature.
     pub fn initialize(env: Env, admin: Address) {
         crate::non_reentrant!(&env);
 
-        if env.storage().instance().has(&KEY_ADMIN) {
+        if env.storage().instance().has(&KEY_INIT) {
             panic_with_error!(&env, ControlPlaneError::AlreadyInitialized);
         }
 
-        // Zero-address protection — reject the contract itself as admin
-        // (Soroban has no null address, but self-admin is a footgun)
-        if admin == env.current_contract_address() {
-            panic_with_error!(&env, ControlPlaneError::ZeroAddress);
-        }
-
+        admin.require_auth();
         env.storage().instance().set(&KEY_ADMIN, &admin);
+        env.storage().instance().set(&KEY_INIT, &true);
+        env.storage().instance().set(&KEY_PARAM_COUNT, &0u64);
+    }
 
-        // Initialise version tracking (ignore AlreadyInitialized – contract may be upgraded)
-        if get_stored_version(&env).is_none() {
-            init_version(&env);
-        }
+    /// Return the configured administrator, or `None` before initialization.
+    pub fn admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&KEY_ADMIN)
+    }
 
-        env.events()
-            .publish((EVT_INITIALIZED, ), admin);
+    /// Return a stored protocol parameter value.
+    pub fn get_param(env: Env, param_key: Symbol) -> Option<u64> {
+        env.storage().instance().get(&param_key)
+    }
+
+    /// Return the number of successful parameter updates.
+    pub fn param_update_count(env: Env) -> u64 {
+        env.storage().instance().get(&KEY_PARAM_COUNT).unwrap_or(0)
+    }
+
+    /// Return the latest accepted audit commitment sequence.
+    pub fn last_audit_sequence(env: Env) -> u64 {
+        audit::get_last_sequence(&env)
+    }
+
+    /// Return the latest accepted state commitment hash.
+    pub fn state_hash(env: Env) -> BytesN<32> {
+        audit::get_state_hash(&env)
+    }
+
+    /// Pure preflight integrity check for clients and tests.
+    pub fn integrity_check(env: Env, commitment: StateCommitment, payload: BytesN<32>) -> bool {
+        audit::integrity_check(&env, &commitment, &payload.to_array())
+    }
+
+    /// Return the configured admin, or panic if not initialized.
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&KEY_ADMIN)
+            .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized))
+    }
+
+    /// Return a previously set protocol parameter, or `None`.
+    pub fn get_param(env: Env, param_key: Symbol) -> Option<u64> {
+        env.storage().instance().get(&param_key)
     }
 
     /// Mutate a protocol parameter securely.
     ///
-    /// Security checklist:
-    /// - Admin auth required
-    /// - Circuit breaker must be closed (#118)
-    /// - ZK-ready integrity check via validate_transition
-    /// - Parameter sanitization with bounds (#110)
-    /// - Re-entrancy guarded
-    /// - Event emission
+    /// Security properties:
+    /// - caller must be the initialized admin and must authorize the invocation;
+    /// - circuit breaker must be closed;
+    /// - transition must pass the audit module's chained commitment check;
+    /// - update counter uses checked arithmetic;
+    /// - reentrancy guard wraps the full mutation.
     pub fn update_param(
         env: Env,
         caller: Address,
@@ -122,185 +141,111 @@ impl ControlPlane {
         payload: BytesN<32>,
     ) {
         crate::non_reentrant!(&env);
-        caller.require_auth();
+        require_admin(&env, &caller);
+        circuit_breaker::assert_closed(&env);
 
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&KEY_ADMIN)
-            .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized));
+        let payload_raw = payload.to_array();
+        audit::validate_transition_inner(&env, &commitment, &payload_raw);
 
-        if caller != admin {
-            panic_with_error!(&env, ControlPlaneError::Unauthorized);
-        }
-
-        // Ensure the protocol isn't paused
-        assert_closed(&env);
-
-        // ZK-ready integrity check (enforces no replays and valid hash)
-        validate_transition(&env, &commitment, &payload.to_array());
-
-        // Parameter sanitization (#110)
-        sanitize_param(&env, &param_key, param_val);
-
-        // Update the parameter
         env.storage().instance().set(&param_key, &param_val);
-
-        env.events().publish(
-            (EVT_PARAM_UPDATED, param_key.clone()),
-            (admin, param_val),
-        );
+        env.storage().instance().set(&KEY_LAST_PARAM, &param_key);
+        increment_param_count(&env);
     }
 
-    /// Get a protocol parameter.
-    pub fn get_param(env: Env, param_key: Symbol) -> Option<u64> {
-        env.storage().instance().get(&param_key)
+    /// Initialize the shared circuit-breaker guardian set through the
+    /// control-plane contract surface.
+    pub fn init_breaker(env: Env, caller: Address, guardians: soroban_sdk::Vec<Address>) {
+        crate::non_reentrant!(&env);
+        require_admin(&env, &caller);
+        circuit_breaker::init(&env, guardians);
     }
 
-    /// Get the current admin.
-    pub fn get_admin(env: Env) -> Option<Address> {
-        env.storage().instance().get(&KEY_ADMIN)
+    /// Trip the circuit breaker. Guardian authorization is enforced by the
+    /// circuit-breaker module itself.
+    pub fn trip_breaker(env: Env, guardian: Address) {
+        circuit_breaker::trip(&env, &guardian);
     }
 
-    /// Initiate a 2-step admin transfer (zero-address protected).
+    /// Reset the circuit breaker. Guardian authorization is enforced by the
+    /// circuit-breaker module itself.
+    pub fn reset_breaker(env: Env, guardian: Address) {
+        circuit_breaker::reset(&env, &guardian);
+    }
+
+    /// Store a governance proposal via the shared governance module.
+    pub fn propose(env: Env, proposal: Proposal) -> u64 {
+        crate::governance::propose(&env, proposal)
+    }
+
+    /// Approve a governance proposal via the shared governance module.
+    pub fn approve(env: Env, signer: Address, proposal_id: u64) {
+        crate::governance::approve(&env, &signer, proposal_id);
+    }
+
+    /// Execute a governance proposal via the shared governance module.
+    pub fn execute(env: Env, proposal_id: u64) -> Proposal {
+        crate::governance::execute(&env, proposal_id)
+    }
+
+    /// Register an off-chain ZK proof attestation for a committed state root.
     ///
-    /// Prevents accidental lockout by requiring the new admin to accept.
-    pub fn transfer_admin(env: Env, caller: Address, new_admin: Address) {
+    /// This stable hook is admin-gated and only accepts attestations for the
+    /// current committed state hash, preventing fabricated proofs for unrelated
+    /// roots from being anchored under the control-plane ABI.
+    pub fn register_proof(
+        env: Env,
+        caller: Address,
+        state_root: BytesN<32>,
+        proof_hash: BytesN<32>,
+        block_seq: u32,
+        metadata: Map<Symbol, Bytes>,
+    ) {
         crate::non_reentrant!(&env);
-        caller.require_auth();
-
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&KEY_ADMIN)
-            .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized));
-
-        if caller != admin {
-            panic_with_error!(&env, ControlPlaneError::Unauthorized);
-        }
-
-        // Zero-address protection (#112)
-        if new_admin == admin {
-            panic_with_error!(&env, ControlPlaneError::InvalidAdmin);
-        }
-        if new_admin == env.current_contract_address() {
-            panic_with_error!(&env, ControlPlaneError::ZeroAddress);
-        }
-
-        env.storage().instance().set(&KEY_PENDING_ADMIN, &new_admin);
-
-        env.events().publish(
-            (EVT_ADMIN_XFER_INIT, ),
-            (admin, new_admin),
+        crate::core::zk_hooks::register_proof(
+            &env,
+            &caller,
+            state_root,
+            proof_hash,
+            block_seq,
+            metadata,
         );
     }
 
-    /// Accept a pending admin transfer. Must be called by pending_admin.
-    pub fn accept_admin(env: Env, caller: Address) {
-        crate::non_reentrant!(&env);
-        caller.require_auth();
-
-        let pending: Address = env
-            .storage()
-            .instance()
-            .get(&KEY_PENDING_ADMIN)
-            .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::AdminTransferNotPending));
-
-        if caller != pending {
-            panic_with_error!(&env, ControlPlaneError::Unauthorized);
-        }
-
-        env.storage().instance().set(&KEY_ADMIN, &caller);
-        env.storage().instance().remove(&KEY_PENDING_ADMIN);
-
-        env.events().publish((EVT_ADMIN_ACCEPTED, ), caller);
-    }
-
-    /// Get pending admin, if a transfer is in progress.
-    pub fn get_pending_admin(env: Env) -> Option<Address> {
-        env.storage().instance().get(&KEY_PENDING_ADMIN)
-    }
-
-    /// Cancel a pending admin transfer. Only current admin can cancel.
-    pub fn cancel_admin_transfer(env: Env, caller: Address) {
-        crate::non_reentrant!(&env);
-        caller.require_auth();
-
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&KEY_ADMIN)
-            .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized));
-
-        if caller != admin {
-            panic_with_error!(&env, ControlPlaneError::Unauthorized);
-        }
-
-        if !env.storage().instance().has(&KEY_PENDING_ADMIN) {
-            panic_with_error!(&env, ControlPlaneError::AdminTransferNotPending);
-        }
-
-        env.storage().instance().remove(&KEY_PENDING_ADMIN);
-    }
-
-    // --- Versioning endpoints (#115) ---
-
-    /// Get semantic version tuple (major, minor, patch).
-    pub fn version(env: Env) -> (u32, u32, u32) {
-        let _ = env;
-        get_version_tuple()
-    }
-
-    /// Get version string, e.g. "0.1.0".
-    pub fn version_string(env: Env) -> String {
-        version_string(&env)
-    }
-
-    /// Get storage schema contract version.
-    pub fn contract_version(env: Env) -> u32 {
-        let _ = env;
-        contract_version()
-    }
-
-    /// Get stored on-chain version, if initialised.
-    pub fn get_stored_version(env: Env) -> Option<u32> {
-        get_stored_version(&env)
-    }
-
-    // --- Pause / circuit-breaker integration (#118) ---
-
-    /// Check if the control plane is paused (circuit breaker open).
-    pub fn is_paused(env: Env) -> bool {
-        breaker_state(&env) == BreakerState::Open
+    /// Retrieve a proof attestation by state root.
+    pub fn get_proof(env: Env, state_root: BytesN<32>) -> Option<BytesN<32>> {
+        crate::core::zk_hooks::get_proof(&env, state_root)
     }
 }
 
-/// Sanitize administrative parameters.
-///
-/// Whitelist-only keys with strict bounds checking to prevent
-/// misconfiguration attacks (#110).
-fn sanitize_param(env: &Env, key: &Symbol, val: u64) {
-    let allowed = is_allowed_param(key);
-    if !allowed {
-        panic_with_error!(env, ControlPlaneError::InvalidParam);
-    }
+fn require_admin(env: &Env, caller: &Address) {
+    caller.require_auth();
 
-    let in_bounds = match key {
-        k if *k == PARAM_FEE => (FEE_MIN..=FEE_MAX).contains(&val),
-        k if *k == PARAM_THRESH => (THRESH_MIN..=THRESH_MAX).contains(&val),
-        k if *k == PARAM_TLCK => (TLCK_MIN..=TLCK_MAX).contains(&val),
-        k if *k == PARAM_LIMIT => (LIMIT_MIN..=LIMIT_MAX).contains(&val),
-        _ => false,
-    };
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&KEY_ADMIN)
+        .unwrap_or_else(|| panic_with_error!(env, ControlPlaneError::NotInitialized));
 
-    if !in_bounds {
-        panic_with_error!(env, ControlPlaneError::ParamOutOfBounds);
+    if caller != &admin {
+        panic_with_error!(env, ControlPlaneError::Unauthorized);
     }
 }
 
-fn is_allowed_param(key: &Symbol) -> bool {
-    *key == PARAM_FEE
-        || *key == PARAM_THRESH
-        || *key == PARAM_TLCK
-        || *key == PARAM_LIMIT
+fn increment_param_count(env: &Env) {
+    let count: u64 = env.storage().instance().get(&KEY_PARAM_COUNT).unwrap_or(0);
+    let next = count
+        .checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(env, ControlPlaneError::ArithmeticOverflow));
+    env.storage().instance().set(&KEY_PARAM_COUNT, &next);
+}
+
+/// Emit a compact governance-control event for future control-plane extensions.
+#[allow(dead_code)]
+fn publish_control_governance_event(env: &Env, proposal_id: u64, executed: bool, hash: BytesN<32>) {
+    let action = if executed { ACT_EXECUTE } else { ACT_PROPOSE };
+    publish_event(env, MOD_GOV | action, proposal_id, hash);
+}
+
+fn is_reserved_key(key: &Symbol) -> bool {
+    RESERVED_KEYS.iter().any(|reserved| reserved == key)
 }

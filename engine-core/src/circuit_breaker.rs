@@ -104,6 +104,12 @@ mod tests {
     #[contractimpl]
     impl TestContract {}
 
+    #[soroban_sdk::contract]
+    pub struct TestContract;
+
+    #[soroban_sdk::contractimpl]
+    impl TestContract {}
+
     #[test]
     fn trip_and_reset() {
         let env = Env::default();

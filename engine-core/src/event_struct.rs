@@ -50,6 +50,7 @@ pub const ACT_REQUEST: u32 = 0x09 << 8;
 pub const ACT_TRIGGERED: u32 = 0x0A << 8;
 pub const ACT_FEE: u32 = 0x0B << 8;
 pub const ACT_UPGRADE: u32 = 0x0C << 8;
+pub const ACT_UPDATE: u32 = 0x0D << 8;
 
 /// Compact event struct emitted by all engine-core modules.
 #[contracttype]
