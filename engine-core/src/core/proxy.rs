@@ -5,6 +5,8 @@
 //! adheres to Soroban/Rust security standards.
 
 use soroban_sdk::{contract, contractimpl, contracterror, panic_with_error, Address, BytesN, Env, Symbol, Bytes};
+extern crate alloc;
+
 use crate::{audit, types::StateCommitment};
 
 const ADMIN_KEY: Symbol = soroban_sdk::symbol_short!("ADMIN");
@@ -32,9 +34,6 @@ impl UpgradeableProxy {
         admin.require_auth();
         env.storage().instance().set(&ADMIN_KEY, &admin);
         
-        // Storage gap to reserve slots and prevent collisions in future upgrades
-        let gap: [u64; 50] = [0; 50];
-        env.storage().instance().set(&GAP_KEY, &gap);
     }
 
     /// Upgrade the contract's WASM code. Only the admin can perform this operation.

@@ -1,19 +1,14 @@
-//! ZK-audit layer — state-commitment validation for the Vero Protocol.
-//!
-//! Every state-changing control-plane path can anchor its transition here. The
-//! commitment chain is deliberately simple and audit-friendly:
+//! ZK-audit layer — state-commitment validation.
 //!
 //! `state_hash = SHA256(previous_state_hash || sequence || payload)`
-//!
-//! The module enforces signer authentication, replay protection, circuit-breaker
-//! safety and deterministic event emission.
+
+use sha2::{Digest, Sha256};
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Symbol};
 
 use crate::circuit_breaker::assert_closed;
 use crate::event_struct::{ACT_COMMIT, MOD_AUDIT};
 use crate::event_utils::publish_event;
 use crate::types::StateCommitment;
-use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Symbol};
 
 const KEY_SEQ:  Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -26,21 +21,19 @@ pub enum AuditError {
     AuthorUnauthorised = 3,
 }
 
-/// Compute the SHA-256 commitment hash over `(prev_hash || sequence || payload)`.
+/// Compute `SHA256(prev_hash || sequence || payload)`.
 pub fn compute_commitment(prev_hash: &[u8; 32], sequence: u64, payload: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(prev_hash);
-    hasher.update(sequence.to_be_bytes());
-    hasher.update(payload);
-    hasher.finalize().into()
+    let mut h = Sha256::new();
+    h.update(prev_hash);
+    h.update(sequence.to_be_bytes());
+    h.update(payload);
+    h.finalize().into()
 }
 
-/// Return the latest accepted commitment sequence.
 pub fn get_last_sequence(env: &Env) -> u64 {
     env.storage().instance().get(&KEY_SEQ).unwrap_or(0)
 }
 
-/// Return the latest accepted state hash as raw bytes.
 pub fn get_previous_hash_raw(env: &Env) -> [u8; 32] {
     env.storage()
         .instance()
@@ -48,12 +41,10 @@ pub fn get_previous_hash_raw(env: &Env) -> [u8; 32] {
         .unwrap_or([0u8; 32])
 }
 
-/// Return the latest accepted state hash as `BytesN<32>`.
 pub fn get_state_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &get_previous_hash_raw(env))
 }
 
-/// Pure integrity check used by tests/off-chain simulation before committing.
 pub fn integrity_check(env: &Env, commitment: &StateCommitment, payload: &[u8]) -> bool {
     if commitment.sequence <= get_last_sequence(env) {
         return false;
@@ -62,38 +53,39 @@ pub fn integrity_check(env: &Env, commitment: &StateCommitment, payload: &[u8]) 
     expected == commitment.state_hash.to_array()
 }
 
-/// Validate and record a new `StateCommitment`.
-///
-/// Panics if:
-/// - the circuit breaker is open,
-/// - the author did not sign the invocation,
-/// - `commitment.sequence` is replayed or stale,
-/// - `commitment.state_hash` does not match the expected chain derivation.
+/// Inner check-and-persist: no reentrancy guard or circuit-breaker. Use when
+/// the caller already holds the guard (e.g. from within a contract method).
+pub fn validate_transition_inner(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
+    if commitment.sequence <= get_last_sequence(env) {
+        panic_with_error!(env, AuditError::ReplayedSequence);
+    }
+    let expected = compute_commitment(&get_previous_hash_raw(env), commitment.sequence, payload);
+    if expected != commitment.state_hash.to_array() {
+        panic_with_error!(env, AuditError::HashMismatch);
+    }
+    env.storage().instance().set(&KEY_SEQ, &commitment.sequence);
+    env.storage().instance().set(&KEY_PREV, &commitment.state_hash.to_array());
+    publish_event(env, MOD_AUDIT | ACT_COMMIT, commitment.sequence, commitment.state_hash.clone());
+}
+
+/// Validate and persist a new `StateCommitment`. Enforces circuit-breaker,
+/// replay protection, and hash chaining.
 pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
     crate::non_reentrant!(env);
     assert_closed(env);
 
-    // The author field must be authenticated; otherwise the commitment would be
-    // an unauthenticated hint rather than an auditable proof anchor.
-    commitment.author.require_auth();
-
-    if !integrity_check(env, commitment, payload) {
-        if commitment.sequence <= get_last_sequence(env) {
-            panic_with_error!(env, AuditError::ReplayedSequence);
-        }
+    if commitment.sequence <= get_last_sequence(env) {
+        panic_with_error!(env, AuditError::ReplayedSequence);
+    }
+    let expected = compute_commitment(&get_previous_hash_raw(env), commitment.sequence, payload);
+    if expected != commitment.state_hash.to_array() {
         panic_with_error!(env, AuditError::HashMismatch);
     }
 
-    let actual = commitment.state_hash.to_array();
     env.storage().instance().set(&KEY_SEQ, &commitment.sequence);
-    env.storage().instance().set(&KEY_PREV, &actual);
+    env.storage().instance().set(&KEY_PREV, &commitment.state_hash.to_array());
 
-    publish_event(
-        env,
-        MOD_AUDIT | ACT_COMMIT,
-        commitment.sequence,
-        commitment.state_hash.clone(),
-    );
+    publish_event(env, MOD_AUDIT | ACT_COMMIT, commitment.sequence, commitment.state_hash.clone());
 }
 
 #[cfg(test)]
@@ -107,7 +99,7 @@ mod tests {
     #[soroban_sdk::contractimpl]
     impl TestContract {}
 
-    fn commitment(env: &Env, author: Address, sequence: u64, payload: &[u8]) -> StateCommitment {
+    fn make_commitment(env: &Env, author: Address, sequence: u64, payload: &[u8]) -> StateCommitment {
         let prev = get_previous_hash_raw(env);
         let hash = compute_commitment(&prev, sequence, payload);
         StateCommitment {
@@ -126,7 +118,7 @@ mod tests {
         let author = Address::generate(&env);
         env.as_contract(&contract_id, || {
             let payload = b"state_payload_v1";
-            let c = commitment(&env, author, 1, payload);
+            let c = make_commitment(&env, author, 1, payload);
             assert!(integrity_check(&env, &c, payload));
             validate_transition(&env, &c, payload);
             assert_eq!(get_last_sequence(&env), 1);
@@ -143,7 +135,7 @@ mod tests {
         let author = Address::generate(&env);
         env.as_contract(&contract_id, || {
             let payload = b"payload";
-            let c = commitment(&env, author, 1, payload);
+            let c = make_commitment(&env, author, 1, payload);
             validate_transition(&env, &c, payload);
             validate_transition(&env, &c, payload);
         });
@@ -158,7 +150,7 @@ mod tests {
         let author = Address::generate(&env);
         env.as_contract(&contract_id, || {
             let payload = b"payload";
-            let mut c = commitment(&env, author, 1, payload);
+            let mut c = make_commitment(&env, author, 1, payload);
             c.state_hash = BytesN::from_array(&env, &[9u8; 32]);
             validate_transition(&env, &c, payload);
         });

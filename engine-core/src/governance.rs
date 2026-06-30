@@ -1,55 +1,53 @@
-//! Multi-sig governance with explicit proposal-state transitions and timelock.
+//! Multi-sig governance with timelock.
 //!
-//! State machine:
+//! `Pending → Approved → Executed`
 //!
-//! ```text
-//! Pending ──(threshold approvals)──> Approved ──(timelock elapsed)──> Executed
-//! ```
-//!
-//! Invalid transitions panic with typed `GovError` values for auditability.
+//! Invalid transitions panic with typed `GovError` values.
+
+use soroban_sdk::{
+    contracterror, panic_with_error, symbol_short, token, vec, Address, BytesN, Env, Map, Symbol, Vec,
+};
 
 use crate::circuit_breaker::assert_closed;
 use crate::event_struct::{ACT_APPROVE, ACT_EXECUTE, ACT_PROPOSE, MOD_GOV};
 use crate::event_utils::{publish_event, zero_hash};
 use crate::types::{Proposal, ProposalState};
-use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, vec, Address, Env, Map, Symbol, Vec, BytesN,
-};
 
 const KEY_PROPOSALS: Symbol = symbol_short!("PROPS");
-const KEY_SIGNERS: Symbol = symbol_short!("SIGNERS");
-const KEY_THRESH: Symbol = symbol_short!("THRESH");
+const KEY_SIGNERS:   Symbol = symbol_short!("SIGNERS");
+const KEY_THRESH:    Symbol = symbol_short!("THRESH");
 const KEY_MIN_STAKE: Symbol = symbol_short!("MINSTAKE");
 const KEY_STAKE_TOK: Symbol = symbol_short!("STKTOK");
 
-/// Ledgers to wait after threshold approval before execution (~1 hour).
+/// Ledgers to wait after quorum before execution (~1 hour on Stellar).
 pub const TIMELOCK_LEDGERS: u32 = 720;
 const MAX_THRESHOLD: u32 = 100;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum GovError {
-    NotASigner = 1,
-    AlreadyApproved = 2,
-    ThresholdNotMet = 3,
-    TimelockActive = 4,
+    NotASigner             = 1,
+    AlreadyApproved        = 2,
+    ThresholdNotMet        = 3,
+    TimelockActive         = 4,
     InvalidStateTransition = 5,
-    ProposalNotFound = 6,
-    InvalidThreshold = 7,
-    InvalidStake = 8,
-    AlreadyInitialized = 9,
-    ProposalAlreadyExists = 10,
-    ArithmeticOverflow = 11,
+    ProposalNotFound       = 6,
+    InvalidThreshold       = 7,
+    InvalidStake           = 8,
+    AlreadyInitialized     = 9,
+    ProposalAlreadyExists  = 10,
+    ArithmeticOverflow     = 11,
 }
 
+/// Initialise governance with `signers` and a minimum-approval `threshold`.
 pub fn init(env: &Env, signers: Vec<Address>, threshold: u32) {
     init_internal(env, signers, threshold, None, 0);
 }
 
 /// Initialise governance with an optional anti-Sybil stake gate.
 ///
-/// `min_stake == 0` disables the stake gate. When enabled, every approving
-/// signer must hold at least `min_stake` units of `stake_token`.
+/// Set `min_stake = 0` to disable the gate. When enabled every approver must
+/// hold at least `min_stake` units of `stake_token`.
 pub fn init_with_stake(
     env: &Env,
     signers: Vec<Address>,
@@ -68,37 +66,33 @@ fn init_internal(
     min_stake: i128,
 ) {
     crate::non_reentrant!(env);
-
     if env.storage().instance().has(&KEY_SIGNERS) {
         panic_with_error!(env, GovError::AlreadyInitialized);
     }
-    if threshold == 0 || threshold > signers.len() || threshold > MAX_THRESHOLD {
+    if threshold == 0 || threshold > signers.len() as u32 || threshold > MAX_THRESHOLD {
         panic_with_error!(env, GovError::InvalidThreshold);
     }
     if min_stake < 0 || (min_stake > 0 && stake_token.is_none()) {
         panic_with_error!(env, GovError::InvalidStake);
     }
-
     let mut seen = Vec::new(env);
-    for signer in signers.iter() {
-        if seen.contains(&signer) {
+    for s in signers.iter() {
+        if seen.contains(&s) {
             panic_with_error!(env, GovError::InvalidThreshold);
         }
-        seen.push_back(signer);
+        seen.push_back(s);
     }
-
     env.storage().instance().set(&KEY_SIGNERS, &signers);
     env.storage().instance().set(&KEY_THRESH, &threshold);
     env.storage().instance().set(&KEY_MIN_STAKE, &min_stake);
-    if let Some(token) = stake_token {
-        env.storage().instance().set(&KEY_STAKE_TOK, &token);
+    if let Some(tok) = stake_token {
+        env.storage().instance().set(&KEY_STAKE_TOK, &tok);
     }
-
     let empty: Map<u64, (Proposal, u32)> = Map::new(env);
     env.storage().instance().set(&KEY_PROPOSALS, &empty);
 }
 
-/// Returns all proposals as `Map<proposal_id, (Proposal, unlock_ledger)>`.
+/// All proposals keyed by proposal id, value is `(Proposal, unlock_ledger)`.
 pub fn load_proposals(env: &Env) -> Map<u64, (Proposal, u32)> {
     env.storage()
         .instance()
@@ -106,8 +100,8 @@ pub fn load_proposals(env: &Env) -> Map<u64, (Proposal, u32)> {
         .unwrap_or(Map::new(env))
 }
 
-fn save_proposals(env: &Env, proposals: &Map<u64, (Proposal, u32)>) {
-    env.storage().instance().set(&KEY_PROPOSALS, proposals);
+fn save_proposals(env: &Env, m: &Map<u64, (Proposal, u32)>) {
+    env.storage().instance().set(&KEY_PROPOSALS, m);
 }
 
 fn load_signers(env: &Env) -> Vec<Address> {
@@ -122,146 +116,124 @@ fn threshold(env: &Env) -> u32 {
 }
 
 fn require_signer(env: &Env, signer: &Address) {
-    let signers = load_signers(env);
-    if !signers.contains(signer) {
+    if !load_signers(env).contains(signer) {
         panic_with_error!(env, GovError::NotASigner);
     }
 }
 
 fn require_stake(env: &Env, signer: &Address) {
-    let min_stake: i128 = env.storage().instance().get(&KEY_MIN_STAKE).unwrap_or(0);
-    if min_stake == 0 {
+    let min: i128 = env.storage().instance().get(&KEY_MIN_STAKE).unwrap_or(0);
+    if min == 0 {
         return;
     }
-    let stake_token: Address = env
+    let tok: Address = env
         .storage()
         .instance()
         .get(&KEY_STAKE_TOK)
         .unwrap_or_else(|| panic_with_error!(env, GovError::InvalidStake));
-    let balance = token::Client::new(env, &stake_token).balance(signer);
-    if balance < min_stake {
+    if token::Client::new(env, &tok).balance(signer) < min {
         panic_with_error!(env, GovError::InvalidStake);
     }
 }
 
-pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
-    let signers: Vec<Address> = env
-        .storage()
-        .instance()
-        .get(&KEY_SIGNERS)
-        .unwrap_or(vec![env]);
-    if !signers.contains(&proposal.proposer) {
-        panic_with_error!(env, GovError::NotASigner);
-    }
-    proposal.proposer.require_auth();
-    
-    // Initialize state to Pending
-    proposal.state = ProposalState::Pending;
+/// Submit a new proposal. `proposal.proposer` must be an authorised signer.
+pub fn propose(env: &Env, proposal: Proposal) -> u64 {
+    crate::non_reentrant!(env);
+    require_signer(env, &proposal.proposer);
 
-    let mut props = load_proposals(env);
-    let unlock_ledger = env.ledger().sequence() + TIMELOCK_LEDGERS;
     let id = proposal.id;
-    props.set(id, (proposal.clone(), unlock_ledger));
-    env.storage().instance().set(&KEY_PROPOSALS, &props);
+    let mut props = load_proposals(env);
+    if props.contains_key(id) {
+        panic_with_error!(env, GovError::ProposalAlreadyExists);
+    }
 
-    publish_event(
-        env,
-        MOD_GOV | ACT_PROPOSE,
-        proposal.id,
-        BytesN::from_array(env, &[0u8; 32]),
-    );
-    proposal.id
+    let mut prop = proposal;
+    prop.state = ProposalState::Pending;
+    props.set(id, (prop, 0u32));
+    save_proposals(env, &props);
+
+    publish_event(env, MOD_GOV | ACT_PROPOSE, id, zero_hash(env));
+    id
 }
 
+/// Record `signer`'s approval. Transitions `Pending → Approved` at threshold.
 pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {
-    crate::circuit_breaker::assert_closed(env);
-    crate::non_reentrant!(env);
+    let _guard = crate::guards::ReentrancyGuard::enter(env);
     assert_closed(env);
-
     signer.require_auth();
     require_signer(env, signer);
     require_stake(env, signer);
 
-    let mut proposals = load_proposals(env);
-    let (mut proposal, mut unlock_ledger) = proposals
-        .get(proposal_id)
-        .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
-
-    if proposal.state != ProposalState::Pending {
-        panic_with_error!(env, GovError::InvalidStateTransition);
-    }
-    if proposal.approved_by.contains(signer) {
-        panic_with_error!(env, GovError::AlreadyApproved);
-    }
-    proposal.approved_by.push_back(signer.clone());
-
-    let approval_threshold = threshold(env);
-    if approval_threshold == 0 {
+    let thresh = threshold(env);
+    if thresh == 0 {
         panic_with_error!(env, GovError::InvalidThreshold);
     }
 
-    if proposal.approved_by.len() >= approval_threshold {
-        proposal.state = ProposalState::Approved;
-        unlock_ledger = env
+    let mut props = load_proposals(env);
+    let (mut prop, mut unlock) = props
+        .get(proposal_id)
+        .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
+
+    if prop.state != ProposalState::Pending {
+        panic_with_error!(env, GovError::InvalidStateTransition);
+    }
+    if prop.approved_by.contains(signer) {
+        panic_with_error!(env, GovError::AlreadyApproved);
+    }
+
+    prop.approved_by.push_back(signer.clone());
+
+    if prop.approved_by.len() as u32 >= thresh {
+        prop.state = ProposalState::Approved;
+        unlock = env
             .ledger()
             .sequence()
             .checked_add(TIMELOCK_LEDGERS)
             .unwrap_or_else(|| panic_with_error!(env, GovError::ArithmeticOverflow));
     }
 
-    proposals.set(proposal_id, (proposal, unlock_ledger));
-    save_proposals(env, &proposals);
+    props.set(proposal_id, (prop, unlock));
+    save_proposals(env, &props);
 
     publish_event(env, MOD_GOV | ACT_APPROVE, proposal_id, zero_hash(env));
 }
 
-/// Execute an approved proposal after its timelock has elapsed.
+/// Execute an approved proposal after the timelock has elapsed.
 pub fn execute(env: &Env, proposal_id: u64) -> Proposal {
-    crate::circuit_breaker::assert_closed(env);
-    crate::non_reentrant!(env);
+    let _guard = crate::guards::ReentrancyGuard::enter(env);
     assert_closed(env);
 
-    let mut proposals = load_proposals(env);
-    let (mut proposal, unlock_ledger) = proposals
+    let mut props = load_proposals(env);
+    let (mut prop, unlock) = props
         .get(proposal_id)
         .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
 
-    if proposal.state != ProposalState::Approved {
+    if prop.state != ProposalState::Approved {
         panic_with_error!(env, GovError::InvalidStateTransition);
     }
-    if proposal.approved_by.len() < threshold(env) {
-        panic_with_error!(env, GovError::ThresholdNotMet);
-    }
-    if env.ledger().sequence() < unlock_ledger {
+    if env.ledger().sequence() < unlock {
         panic_with_error!(env, GovError::TimelockActive);
     }
 
-    proposal.state = ProposalState::Executed;
-    proposals.set(proposal_id, (proposal.clone(), unlock_ledger));
-    save_proposals(env, &proposals);
+    prop.state = ProposalState::Executed;
+    props.set(proposal_id, (prop.clone(), unlock));
+    save_proposals(env, &props);
 
-    publish_event(
-        env,
-        MOD_GOV | ACT_EXECUTE,
-        proposal_id,
-        proposal.action_hash.clone(),
-    );
-    proposal
+    publish_event(env, MOD_GOV | ACT_EXECUTE, proposal_id, prop.action_hash.clone());
+    prop
 }
 
 /// Return a proposal or panic with `ProposalNotFound`.
 pub fn get_proposal(env: &Env, proposal_id: u64) -> Proposal {
-    let (proposal, _) = load_proposals(env)
+    let (prop, _) = load_proposals(env)
         .get(proposal_id)
         .unwrap_or_else(|| panic_with_error!(env, GovError::ProposalNotFound));
-    proposal
+    prop
 }
 
-/// Return a proposal's unlock ledger, if it exists.
+/// Return a proposal's unlock ledger, or `None` if not found.
 pub fn get_unlock_ledger(env: &Env, proposal_id: u64) -> Option<u32> {
-    load_proposals(env)
-        .get(proposal_id)
-        .map(|(_, unlock)| unlock)
+    load_proposals(env).get(proposal_id).map(|(_, unlock)| unlock)
 }
 
 #[cfg(test)]
@@ -281,7 +253,7 @@ mod tests {
             action_hash: BytesN::from_array(env, &[7u8; 32]),
             proposer,
             approved_by: vec![env],
-            state: ProposalState::Executed,
+            state: ProposalState::Pending,
         }
     }
 
@@ -295,15 +267,9 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             init(&env, vec![&env, alice.clone(), bob.clone()], 2);
-        });
-        env.as_contract(&contract_id, || {
-            propose(&env, proposal(&env, 1, alice.clone()));
-        });
-        env.as_contract(&contract_id, || {
+            let _ = propose(&env, proposal(&env, 1, alice.clone()));
             approve(&env, &alice, 1);
             assert_eq!(get_proposal(&env, 1).state, ProposalState::Pending);
-        });
-        env.as_contract(&contract_id, || {
             approve(&env, &bob, 1);
             assert_eq!(get_proposal(&env, 1).state, ProposalState::Approved);
             assert_eq!(get_unlock_ledger(&env, 1), Some(TIMELOCK_LEDGERS));

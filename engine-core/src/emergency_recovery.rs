@@ -1,4 +1,7 @@
 //! Emergency recovery — multi-sig guarded exit path for bricked contracts.
+//!
+//! Requests are explicit, approvals are distinct, and execution emits compact
+//! audit events.
 
 use crate::circuit_breaker::assert_closed;
 use crate::event_struct::{ACT_REQUEST, ACT_TRIGGERED, MOD_RECOVERY};
@@ -7,28 +10,28 @@ use soroban_sdk::{
     contracterror, panic_with_error, symbol_short, token, vec, Address, Env, String, Symbol, Vec,
 };
 
-const KEY_ADMINS: Symbol = symbol_short!("ER_ADMINS");
-const KEY_THRESH: Symbol = symbol_short!("ER_THRESH");
+const KEY_ADMINS:    Symbol = symbol_short!("ER_ADMINS");
+const KEY_THRESH:    Symbol = symbol_short!("ER_THRESH");
 const KEY_APPROVALS: Symbol = symbol_short!("ER_APPRVS");
-const KEY_DEST: Symbol = symbol_short!("ER_DEST");
-const KEY_TOKEN: Symbol = symbol_short!("ER_TOKEN");
-const KEY_AMOUNT: Symbol = symbol_short!("ER_AMOUNT");
-const ZERO_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const KEY_DEST:      Symbol = symbol_short!("ER_DEST");
+const KEY_TOKEN:     Symbol = symbol_short!("ER_TOKEN");
+const KEY_AMOUNT:    Symbol = symbol_short!("ER_AMOUNT");
+const ZERO_ADDRESS:  &str   = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum RecoveryError {
-    NotAdmin = 1,
-    AlreadyApproved = 2,
-    ThresholdNotMet = 3,
-    NoPendingRequest = 4,
-    InvalidThreshold = 5,
-    InvalidAddress = 6,
-    InvalidAmount = 7,
-    AlreadyInitialized = 8,
+    NotAdmin           = 1,
+    AlreadyApproved    = 2,
+    ThresholdNotMet    = 3,
+    NoPendingRequest   = 4,
+    InvalidThreshold   = 5,
+    InvalidAddress     = 6,
+    InvalidAmount      = 7,
+    DuplicateAdmin     = 8,
+    AlreadyInitialized = 9,
 }
 
-/// Initialise the recovery module.
 pub fn init(env: &Env, admins: Vec<Address>, threshold: u32) {
     if env.storage().instance().has(&KEY_ADMINS) {
         panic_with_error!(env, RecoveryError::AlreadyInitialized);
@@ -36,22 +39,19 @@ pub fn init(env: &Env, admins: Vec<Address>, threshold: u32) {
     if threshold == 0 || threshold > admins.len() {
         panic_with_error!(env, RecoveryError::InvalidThreshold);
     }
-
     let mut seen = Vec::new(env);
     for admin in admins.iter() {
         validate_address(env, &admin);
         if seen.contains(&admin) {
-            panic_with_error!(env, RecoveryError::InvalidThreshold);
+            panic_with_error!(env, RecoveryError::DuplicateAdmin);
         }
         seen.push_back(admin);
     }
-
     env.storage().instance().set(&KEY_ADMINS, &admins);
     env.storage().instance().set(&KEY_THRESH, &threshold);
     clear_pending(env);
 }
 
-/// Submit (or reset) an emergency recovery request.
 pub fn request(env: &Env, requester: &Address, token: &Address, dest: &Address, amount: i128) {
     crate::non_reentrant!(env);
     assert_closed(env);
@@ -73,12 +73,7 @@ pub fn request(env: &Env, requester: &Address, token: &Address, dest: &Address, 
     approvals.push_back(requester.clone());
     env.storage().instance().set(&KEY_APPROVALS, &approvals);
 
-    publish_event(
-        env,
-        MOD_RECOVERY | ACT_REQUEST,
-        event_amount(env, amount),
-        zero_hash(env),
-    );
+    publish_event(env, MOD_RECOVERY | ACT_REQUEST, event_amount(env, amount), zero_hash(env));
 
     let threshold: u32 = env.storage().instance().get(&KEY_THRESH).unwrap_or(1);
     if approvals.len() >= threshold {
@@ -86,7 +81,6 @@ pub fn request(env: &Env, requester: &Address, token: &Address, dest: &Address, 
     }
 }
 
-/// Approve the pending recovery request.
 pub fn approve(env: &Env, admin: &Address) {
     crate::non_reentrant!(env);
     assert_closed(env);
@@ -99,7 +93,6 @@ pub fn approve(env: &Env, admin: &Address) {
         .instance()
         .get(&KEY_DEST)
         .unwrap_or_else(|| panic_with_error!(env, RecoveryError::NoPendingRequest));
-
     let mut approvals: Vec<Address> = env
         .storage()
         .instance()
@@ -127,6 +120,8 @@ pub fn pending_approvals(env: &Env) -> Vec<Address> {
 }
 
 fn execute_recovery(env: &Env, dest: &Address) {
+    assert_closed(env);
+
     let token: Address = env
         .storage()
         .instance()
@@ -139,12 +134,7 @@ fn execute_recovery(env: &Env, dest: &Address) {
         .unwrap_or_else(|| panic_with_error!(env, RecoveryError::NoPendingRequest));
 
     token::Client::new(env, &token).transfer(&env.current_contract_address(), dest, &amount);
-    publish_event(
-        env,
-        MOD_RECOVERY | ACT_TRIGGERED,
-        event_amount(env, amount),
-        zero_hash(env),
-    );
+    publish_event(env, MOD_RECOVERY | ACT_TRIGGERED, event_amount(env, amount), zero_hash(env));
     clear_pending(env);
 }
 
@@ -157,11 +147,7 @@ fn clear_pending(env: &Env) {
 }
 
 fn require_admin(env: &Env, caller: &Address) {
-    let admins: Vec<Address> = env
-        .storage()
-        .instance()
-        .get(&KEY_ADMINS)
-        .unwrap_or(vec![env]);
+    let admins: Vec<Address> = env.storage().instance().get(&KEY_ADMINS).unwrap_or(vec![env]);
     if !admins.contains(caller) {
         panic_with_error!(env, RecoveryError::NotAdmin);
     }
@@ -169,7 +155,7 @@ fn require_admin(env: &Env, caller: &Address) {
 
 fn validate_address(env: &Env, addr: &Address) {
     let zero = String::from_str(env, ZERO_ADDRESS);
-    if addr.to_string().is_empty() || addr.to_string() == zero {
+    if addr.to_string() == zero {
         panic_with_error!(env, RecoveryError::InvalidAddress);
     }
 }
@@ -184,15 +170,15 @@ fn event_amount(env: &Env, amount: i128) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, vec, Env};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, vec, Env};
 
-    #[soroban_sdk::contract]
+    #[contract]
     pub struct TestContract;
 
-    #[soroban_sdk::contractimpl]
+    #[contractimpl]
     impl TestContract {}
 
-    fn setup(env: &Env, admin_count: u32, threshold: u32) -> (soroban_sdk::Address, Vec<Address>) {
+    fn setup(env: &Env, admin_count: u32, threshold: u32) -> (Address, Vec<Address>) {
         let contract_id = env.register_contract(None, TestContract);
         let mut admins = vec![env];
         for _ in 0..admin_count {
@@ -251,7 +237,7 @@ mod tests {
     fn single_approval_does_not_execute_when_threshold_is_two() {
         let env = Env::default();
         env.mock_all_auths();
-        let (contract_id, admins) = setup(&env, 3, 2);
+        let (contract_id, admins) = setup(&env, 2, 2);
         let token = Address::generate(&env);
         let dest = Address::generate(&env);
         let admin = admins.get(0).unwrap();

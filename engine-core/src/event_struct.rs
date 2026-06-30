@@ -1,4 +1,4 @@
-//! Compact event encoding — bitmask-based event struct.
+//! Compact event encoding for audit-ready Soroban logs.
 //!
 //! `flags` packs module id (bits 0–7) and action id (bits 8–15) into a `u32`:
 //!
@@ -11,18 +11,18 @@
 //! `value` carries a u64 primary value (sequence, proposal id, amount, …).
 //! `hash`  carries an optional 32-byte hash. All-zero when unused.
 
-use soroban_sdk::contracttype;
+use soroban_sdk::{contracttype, BytesN};
 
 // ── module ids ────────────────────────────────────────────────────────────────
 
-pub const MOD_AUDIT: u32 = 0x01;
-pub const MOD_GOV: u32 = 0x02;
+pub const MOD_AUDIT:    u32 = 0x01;
+pub const MOD_GOV:      u32 = 0x02;
 pub const MOD_TREASURY: u32 = 0x03;
-pub const MOD_CB: u32 = 0x04;
-pub const MOD_BURN: u32 = 0x05;
+pub const MOD_CB:       u32 = 0x04;
+pub const MOD_BURN:     u32 = 0x05;
 pub const MOD_RECOVERY: u32 = 0x06;
-pub const MOD_FEE: u32 = 0x07;
-pub const MOD_UPGRADE: u32 = 0x08;
+pub const MOD_FEE:      u32 = 0x07;
+pub const MOD_UPGRADE:  u32 = 0x08;
 
 // ── action ids ────────────────────────────────────────────────────────────────
 
@@ -44,10 +44,7 @@ pub const ACT_UPGRADE:      u32 = 0x0D << 8;
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompactEvent {
-    /// Packed module + action bitmask.
     pub flags: u32,
-    /// Primary numeric value — sequence, proposal id, amount, etc. Zero when unused.
     pub value: u64,
-    /// Optional 32-byte hash. All-zero when unused.
-    pub hash: soroban_sdk::BytesN<32>,
+    pub hash:  BytesN<32>,
 }

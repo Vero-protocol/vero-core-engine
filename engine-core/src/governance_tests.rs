@@ -46,10 +46,10 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        env.mock_all_auths();
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
+
         env.as_contract(&contract_id, || {
             let (p, _) = governance::load_proposals(&env).get(id).unwrap();
             assert_eq!(p.state, ProposalState::Pending);
@@ -62,11 +62,11 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
         env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+
         env.as_contract(&contract_id, || {
             let (p, unlock) = governance::load_proposals(&env).get(id).unwrap();
             assert_eq!(p.state, ProposalState::Approved);
@@ -80,14 +80,13 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
         env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+
         env.as_contract(&contract_id, || {
-            env.ledger()
-                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
+            env.ledger().set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
             governance::execute(&env, id);
             let (p, _) = governance::load_proposals(&env).get(id).unwrap();
             assert_eq!(p.state, ProposalState::Executed);
@@ -101,7 +100,6 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        let approver = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
@@ -119,7 +117,6 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        env.mock_all_auths();
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
@@ -133,14 +130,13 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
         env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
+
         env.as_contract(&contract_id, || {
-            env.ledger()
-                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
+            env.ledger().set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
             governance::execute(&env, id);
             governance::execute(&env, id);
         });
@@ -153,7 +149,6 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        let approver = Address::generate(&env);
         let signer2 = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
@@ -162,8 +157,7 @@ mod tests {
         let id = propose_default(&env, &contract_id, &proposer);
         env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
         env.as_contract(&contract_id, || {
-            env.ledger()
-                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
+            env.ledger().set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
             governance::execute(&env, id);
         });
         env.as_contract(&contract_id, || governance::approve(&env, &signer2, id));
@@ -175,29 +169,19 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        let approver = Address::generate(&env);
 
         init_one_of_one(&env, &contract_id, &proposer);
         let id = propose_default(&env, &contract_id, &proposer);
+
         env.as_contract(&contract_id, || {
-            assert_eq!(
-                governance::get_proposal(&env, id).state,
-                ProposalState::Pending
-            );
+            assert_eq!(governance::get_proposal(&env, id).state, ProposalState::Pending);
         });
         env.as_contract(&contract_id, || governance::approve(&env, &proposer, id));
         env.as_contract(&contract_id, || {
-            assert_eq!(
-                governance::get_proposal(&env, id).state,
-                ProposalState::Approved
-            );
-            env.ledger()
-                .set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
+            assert_eq!(governance::get_proposal(&env, id).state, ProposalState::Approved);
+            env.ledger().set_sequence_number(governance::TIMELOCK_LEDGERS + 1);
             governance::execute(&env, id);
-            assert_eq!(
-                governance::get_proposal(&env, id).state,
-                ProposalState::Executed
-            );
+            assert_eq!(governance::get_proposal(&env, id).state, ProposalState::Executed);
         });
     }
 
@@ -213,10 +197,9 @@ mod tests {
         env.mock_all_auths();
         let contract_id = setup_env(&env);
         let proposer = Address::generate(&env);
-        let signer2 = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
-            governance::init(&env, vec![&env, proposer.clone(), signer2], 2);
+            governance::init(&env, vec![&env, proposer.clone()], 2);
         });
         let id = propose_default(&env, &contract_id, &proposer);
         env.as_contract(&contract_id, || {
@@ -224,9 +207,8 @@ mod tests {
             governance::approve(&env, &proposer, id);
         });
     }
-}
 
-    /// State Transition Matrix (for documentation)
+    /// State Transition Matrix
     ///
     /// | Current State | Operation | Target State | Allowed | Error |
     /// |---|---|---|---|---|
@@ -238,5 +220,6 @@ mod tests {
     /// | Approved | execute (timelock active) | — | No | TimelockActive |
     /// | Executed | approve | — | No | InvalidStateTransition |
     /// | Executed | execute | — | No | InvalidStateTransition |
+    #[allow(dead_code)]
     pub struct StateTransitionMatrix;
 }

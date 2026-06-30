@@ -1,4 +1,4 @@
-//! Protocol fee helpers with checked arithmetic.
+//! Protocol fee calculation and transfer hooks.
 
 use crate::burn::reject_zero_address;
 use crate::circuit_breaker::assert_closed;
@@ -6,12 +6,15 @@ use crate::event_struct::{ACT_FEE, ACT_FEE_TRANSFER, MOD_FEE};
 use crate::event_utils::{publish_event, zero_hash};
 use crate::guards::ReentrancyGuard;
 use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, Address, Env, Symbol,
+    contracterror, panic_with_error, symbol_short, token, Address, Env, String, Symbol,
 };
 
 const KEY_FEE_BPS:       Symbol = symbol_short!("FEE_BPS");
 const KEY_FEE_RECIPIENT: Symbol = symbol_short!("FEE_RCP");
 const KEY_TOK_EX:        Symbol = symbol_short!("TOK_EX");
+
+const MAX_BPS: u32 = 10_000;
+const ZERO_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -22,15 +25,9 @@ pub enum FeeError {
     InvalidAmount          = 4,
 }
 
-const MAX_BPS: u32 = 10_000;
-
-const ZERO_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
-
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 /// Initialise fee configuration. Must be called once during contract setup.
-///
-/// Panics with [`FeeError::InvalidBasisPoints`] if `fee_bps > 10 000`.
 pub fn init(env: &Env, fee_bps: u32, recipient: &Address) {
     if fee_bps > MAX_BPS {
         panic_with_error!(env, FeeError::InvalidBasisPoints);
@@ -60,12 +57,8 @@ pub fn set_fee_recipient(env: &Env, recipient: &Address) {
 
 // ── Token exemption ───────────────────────────────────────────────────────────
 
-fn exempt_key(token: &Address) -> (Symbol, Address) {
-    (KEY_TOK_EX, token.clone())
-}
-
 pub fn set_token_exempt(env: &Env, token: &Address, exempt: bool) {
-    let k = exempt_key(token);
+    let k = (KEY_TOK_EX, token.clone());
     if exempt {
         env.storage().instance().set(&k, &true);
     } else {
@@ -74,7 +67,7 @@ pub fn set_token_exempt(env: &Env, token: &Address, exempt: bool) {
 }
 
 pub fn is_token_exempt(env: &Env, token: &Address) -> bool {
-    env.storage().instance().has(&exempt_key(token))
+    env.storage().instance().has(&(KEY_TOK_EX, token.clone()))
 }
 
 // ── Fee calculation ───────────────────────────────────────────────────────────
@@ -89,7 +82,7 @@ pub fn calculate_fee(env: &Env, amount: i128) -> (i128, i128) {
     }
     let fee = amount
         .checked_mul(fee_bps as i128)
-        .and_then(|v| v.checked_div(10_000))
+        .and_then(|v| v.checked_div(MAX_BPS as i128))
         .unwrap_or_else(|| panic_with_error!(env, FeeError::FeeCalculationOverflow));
     let net = amount
         .checked_sub(fee)
@@ -174,7 +167,6 @@ pub fn deduct_fee(env: &Env, token: &Address, amount: i128) -> i128 {
 }
 
 fn validate_address(env: &Env, addr: &Address) {
-    use soroban_sdk::String;
     let zero = String::from_str(env, ZERO_ADDRESS);
     if addr.to_string() == zero {
         panic_with_error!(env, FeeError::InvalidRecipient);
@@ -186,14 +178,18 @@ fn validate_address(env: &Env, addr: &Address) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, token, Env};
+    use soroban_sdk::{
+        contract, contractimpl,
+        testutils::Address as _,
+        token, Env,
+    };
 
     use crate::circuit_breaker;
 
-    #[soroban_sdk::contract]
+    #[contract]
     pub struct TestContract;
 
-    #[soroban_sdk::contractimpl]
+    #[contractimpl]
     impl TestContract {}
 
     fn setup(env: &Env, fee_bps: u32) -> (Address, Address) {
@@ -235,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn fee_calculation_rounds_down() {
+    fn fee_calculation_fractional_bps() {
         let env = Env::default();
         let (contract_id, _) = setup(&env, 333);
         env.as_contract(&contract_id, || {
@@ -305,13 +301,11 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn init_rejects_bps_over_max() {
+    fn rejects_bps_over_max() {
         let env = Env::default();
         let contract_id = env.register_contract(None, TestContract);
         let recipient = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            init(&env, 10_001, &recipient);
-        });
+        env.as_contract(&contract_id, || init(&env, MAX_BPS + 1, &recipient));
     }
 
     // ── token exemption ───────────────────────────────────────────────────────

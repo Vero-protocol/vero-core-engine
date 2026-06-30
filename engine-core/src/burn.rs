@@ -1,9 +1,6 @@
-//! Burn module — zero-address rejection guard.
-//!
-//! Prevents burning/transferring funds to the zero address.
-//! Wire `reject_zero_address` into any burn or irreversible-transfer entrypoint.
+//! Burn module — zero-address and invalid-amount guards.
 
-use soroban_sdk::{contracterror, panic_with_error, Address, BytesN, Env, String};
+use soroban_sdk::{contracterror, panic_with_error, Address, Env, String};
 
 use crate::event_struct::{ACT_BURN_SAFE, MOD_BURN};
 use crate::event_utils::{publish_event, zero_hash};
@@ -11,7 +8,7 @@ use crate::event_utils::{publish_event, zero_hash};
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum BurnError {
-    ZeroAddress = 1,
+    ZeroAddress   = 1,
     InvalidAmount = 2,
 }
 
@@ -32,7 +29,10 @@ fn amount_to_event_value(env: &Env, amount: i128) -> u64 {
     amount as u64
 }
 
-/// Burn-safe transfer wrapper. Validates recipient/amount before emitting.
+/// Validate recipient and amount, then emit a burn audit event.
+///
+/// Does NOT perform the actual token transfer — callers are responsible for
+/// executing the transfer via the token client before or after this call.
 pub fn burn_to(env: &Env, to: &Address, amount: i128) {
     crate::circuit_breaker::assert_closed(env);
     reject_zero_address(env, to);
