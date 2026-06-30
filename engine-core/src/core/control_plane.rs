@@ -119,11 +119,6 @@ impl ControlPlane {
             .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized))
     }
 
-    /// Return a previously set protocol parameter, or `None`.
-    pub fn get_param(env: Env, param_key: Symbol) -> Option<u64> {
-        env.storage().instance().get(&param_key)
-    }
-
     /// Mutate a protocol parameter securely.
     ///
     /// Security properties:
@@ -240,10 +235,10 @@ impl ControlPlane {
         }
 
         // Ensure the protocol isn't paused
-        assert_closed(&env);
+        circuit_breaker::assert_closed(&env);
 
         // ZK-ready integrity check (enforces no replays and valid hash)
-        validate_transition(&env, &commitment, &payload.to_array());
+        audit::validate_transition_inner(&env, &commitment, &payload.to_array());
 
         // Update the parameters in batch
         for param in params.iter() {

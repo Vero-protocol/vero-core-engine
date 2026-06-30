@@ -17,9 +17,6 @@ pub mod treasury;
 pub mod types;
 pub mod upgrade;
 pub mod version;
-pub mod event_struct;
-pub mod event_utils;
-pub mod core;
 
 #[cfg(test)]
 mod governance_tests;

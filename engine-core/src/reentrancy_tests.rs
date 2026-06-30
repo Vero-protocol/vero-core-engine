@@ -2,13 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-
     use crate::guards::{enter_reentrancy_guard, exit_reentrancy_guard};
     use soroban_sdk::{contract, contractimpl, Env};
-
-    use crate::guards::enter_reentrancy_guard;
-    use soroban_sdk::{contract, contractimpl, Address, Env};
-
 
     #[contract]
     pub struct TestContract;

@@ -34,9 +34,6 @@ impl UpgradeableProxy {
         admin.require_auth();
         env.storage().instance().set(&ADMIN_KEY, &admin);
         
-        // Storage gap to reserve slots and prevent collisions in future upgrades
-        let gap: [u64; 50] = [0; 50];
-        env.storage().instance().set(&GAP_KEY, &gap);
     }
 
     /// Upgrade the contract's WASM code. Only the admin can perform this operation.
