@@ -26,6 +26,12 @@ An intelligent, high-availability RPC failover mechanism designed to maintain pr
 - **Configurable timeouts** and retry limits
 - **Async/await** throughout for maximum concurrency
 
+### 🔐 Deterministic Serialization
+- **Canonical JSON serialization** for consistent proposal hashing
+- **Alphabetically sorted keys** at all nesting levels
+- **Type normalization** for numbers and addresses
+- **Multi-sig consensus** guaranteed across different client versions
+
 ## Architecture
 
 ### Core Components
@@ -33,7 +39,8 @@ An intelligent, high-availability RPC failover mechanism designed to maintain pr
 1. **RpcClient** - Main client with automatic failover logic
 2. **HealthMonitor** - Background health checking and metrics tracking
 3. **ProviderAuthenticator** - Signature verification for provider lists
-4. **Types** - Core types and error handling
+4. **CanonicalSerializer** - Deterministic serialization for proposal hashing
+5. **Types** - Core types and error handling
 
 ### Health Metrics
 
@@ -55,7 +62,46 @@ Where:
 
 ## Usage
 
-### Basic Example
+### Deterministic Proposal Hashing
+
+```rust
+use vero_engine::serialization::{CanonicalSerializer, Proposal, ProposalState};
+
+// Create a proposal
+let proposal = Proposal {
+    id: 42,
+    action: "transfer".to_string(),
+    proposer: "GXXXXXXXXXXXXXXX".to_string(),
+    approved_by: vec!["GYYYYYYYYYYYYYY".to_string()],
+    state: ProposalState::Pending,
+    created_at: 1700000000,
+    expires_at: 1700086400,
+    metadata: None,
+};
+
+// Hash the proposal - guaranteed deterministic
+let hash = CanonicalSerializer::hash_proposal(&proposal)?;
+let hash_hex = CanonicalSerializer::hash_to_hex(&hash);
+
+println!("Proposal hash: {}", hash_hex);
+// All clients will produce the same hash for this proposal
+```
+
+**Multi-Sig Consensus:**
+```rust
+// Signer 1 computes hash
+let signer1_hash = CanonicalSerializer::hash_proposal(&proposal)?;
+
+// Signer 2 independently computes hash (even with different JSON key ordering)
+let signer2_hash = CanonicalSerializer::hash_proposal(&proposal)?;
+
+// Hashes will always match
+assert_eq!(signer1_hash, signer2_hash);
+```
+
+See [SERIALIZATION_GUIDE.md](SERIALIZATION_GUIDE.md) for comprehensive documentation.
+
+### Basic RPC Example
 
 ```rust
 use vero_engine::{RpcClient, RpcConfig, RpcProvider};
@@ -169,16 +215,30 @@ cd engine
 cargo test
 ```
 
+Run serialization tests specifically:
+
+```bash
+# Unit tests
+cargo test --lib serialization
+
+# Integration tests (verifies hash consistency)
+cargo test --test serialization_integration_tests
+
+# Run deterministic hashing example
+cargo run --example deterministic_hashing
+```
+
 Run with logging:
 
 ```bash
 RUST_LOG=debug cargo test -- --nocapture
 ```
 
-Run the example:
+Run all examples:
 
 ```bash
 cargo run --example basic_usage
+cargo run --example deterministic_hashing
 ```
 
 ## Performance Characteristics
