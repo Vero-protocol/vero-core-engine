@@ -23,6 +23,7 @@ pub const MOD_BURN:     u32 = 0x05;
 pub const MOD_RECOVERY: u32 = 0x06;
 pub const MOD_FEE:      u32 = 0x07;
 pub const MOD_UPGRADE:  u32 = 0x08;
+pub const MOD_CORE:     u32 = 0x09;
 
 // ── action ids ────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,8 @@ pub const ACT_TRIGGERED:    u32 = 0x0A << 8;
 pub const ACT_FEE:          u32 = 0x0B << 8;
 pub const ACT_FEE_TRANSFER: u32 = 0x0C << 8;
 pub const ACT_UPGRADE:      u32 = 0x0D << 8;
+pub const ACT_INIT:         u32 = 0x0E << 8;
+pub const ACT_TRANSITION:   u32 = 0x0F << 8;
 
 /// Compact event struct — flat, zero heap allocation.
 #[contracttype]

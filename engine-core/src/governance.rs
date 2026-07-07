@@ -5,7 +5,7 @@
 //! Invalid transitions panic with typed `GovError` values.
 
 use soroban_sdk::{
-    contracterror, panic_with_error, symbol_short, token, vec, Address, BytesN, Env, Map, Symbol, Vec,
+    contracterror, panic_with_error, symbol_short, token, vec, Address, Env, Map, Symbol, Vec,
 };
 
 use crate::circuit_breaker::assert_closed;
