@@ -4,7 +4,7 @@
 //! Includes storage gap to prevent storage collisions, admin controls, and
 //! adheres to Soroban/Rust security standards.
 
-use soroban_sdk::{contract, contractimpl, contracterror, panic_with_error, Address, BytesN, Env, Symbol, Bytes};
+use soroban_sdk::{contract, contractimpl, contracterror, panic_with_error, Address, BytesN, Env, Symbol};
 use crate::{audit, types::StateCommitment};
 
 const ADMIN_KEY: Symbol = soroban_sdk::symbol_short!("ADMIN");
@@ -52,12 +52,7 @@ impl UpgradeableProxy {
     }
     
     /// ZK-ready integrity check invoked via the audit layer
-    pub fn verify_integrity(env: Env, commitment: StateCommitment, payload: Bytes) {
-        // Copy bytes to verify transition
-        let mut payload_buf = alloc::vec::Vec::new();
-        payload_buf.resize(payload.len() as usize, 0);
-        payload.copy_into_slice(&mut payload_buf);
-        
-        audit::validate_transition(&env, &commitment, &payload_buf);
+    pub fn verify_integrity(env: Env, commitment: StateCommitment, payload: BytesN<32>) {
+        audit::validate_transition(&env, &commitment, &payload.to_array());
     }
 }

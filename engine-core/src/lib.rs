@@ -1,8 +1,5 @@
 #![no_std]
 
-extern crate alloc;
-
-
 pub mod audit;
 pub mod burn;
 pub mod circuit_breaker;
