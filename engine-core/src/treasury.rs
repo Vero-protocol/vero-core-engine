@@ -29,11 +29,7 @@ const SNAP_TTL_EXTEND_TO: u32 = 17_280 * 7;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-
 pub enum TreasuryKey {
-
-enum TreasuryKey {
-
     Snapshot(u64),
 }
 
@@ -47,11 +43,8 @@ pub enum TreasuryError {
     OutflowNotFound = 5,
     OutflowAlreadyExecuted = 6,
     TimelockActive = 7,
-
     DuplicateOutflow = 8,
-
-    ArithmeticOverflow = 8,
-
+    ArithmeticOverflow = 9,
 }
 
 #[contracttype]
@@ -186,8 +179,6 @@ pub fn record_snapshot(
 
     let snapshot_key = make_snap_key(snapshot_id);
 
-    let snapshot_key = TreasuryKey::Snapshot(snapshot_id);
-
     env.storage().temporary().set(&snapshot_key, &snapshot);
     env.storage()
         .temporary()
@@ -203,14 +194,8 @@ pub fn record_snapshot(
 }
 
 pub fn get_snapshot(env: &Env, snapshot_id: u64) -> Option<TreasurySnapshot> {
-
     let key = make_snap_key(snapshot_id);
     env.storage().temporary().get(&key)
-
-    env.storage()
-        .temporary()
-        .get(&TreasuryKey::Snapshot(snapshot_id))
-
 }
 
 pub fn get_latest_snapshot(env: &Env) -> Option<TreasurySnapshot> {
@@ -231,9 +216,6 @@ pub fn get_recent_snapshots(env: &Env, count: u32) -> Vec<u64> {
     let mut result = Vec::new(env);
 
     if total == 0 || count == 0 {
-
-    if count == 0 || total == 0 {
-
         return result;
     }
 
@@ -268,12 +250,6 @@ pub fn audit_trail(env: &Env, from_id: u64) -> Vec<TreasurySnapshot> {
     for id in start..=total {
         if let Some(snap) = get_snapshot(env, id) {
             result.push_back(snap);
-
-    let start = if from_id == 0 { 1 } else { from_id.min(total) };
-    for id in start..=total {
-        if let Some(snapshot) = get_snapshot(env, id) {
-            result.push_back(snapshot);
-
         }
     }
     result
@@ -303,15 +279,6 @@ fn make_snap_key(id: u64) -> TreasuryKey {
 mod tests {
     use super::*;
     use soroban_sdk::{contract, contractimpl, testutils::Ledger as _, Env, Map, Symbol};
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use soroban_sdk::{testutils::Ledger as _, Env, Map, Symbol, testutils::Address as _};
-
-    use soroban_sdk::{testutils::Ledger as _, Env, Map, Symbol};
-
 
     #[contract]
     pub struct TestContract;

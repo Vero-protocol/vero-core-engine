@@ -2,6 +2,7 @@ use super::control_plane::{ControlPlane, ControlPlaneClient};
 use crate::audit::compute_commitment;
 use crate::core::zk_hooks;
 use crate::types::StateCommitment;
+use crate::version::{CONTRACT_VERSION, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
 use soroban_sdk::{
     symbol_short,
     testutils::Address as _,
@@ -28,7 +29,7 @@ fn initialized_client(env: &Env) -> (ControlPlaneClient<'_>, Address, Address) {
 }
 
 fn setup_client(env: &Env) -> (Address, ControlPlaneClient<'_>) {
-    let contract_id = env.register(ControlPlane, ());
+    let contract_id = env.register_contract(None, ControlPlane);
     let client = ControlPlaneClient::new(env, &contract_id);
     (contract_id, client)
 }
@@ -68,15 +69,11 @@ fn test_initialize() {
 }
 
 #[test]
-#[should_panic(expected = "ZeroAddress")]
-fn test_initialize_zero_address_protection() {
+fn test_initialize_rejects_contract_as_its_own_admin() {
     let env = Env::default();
     let (contract_id, client) = setup_client(&env);
-    // Trying to set the contract itself as admin should fail
-    let admin = Address::from_string(&"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
-        .parse()
-        .unwrap_or(contract_id.clone()));
-    // Simpler: use contract_id directly (Soroban allows this, our check catches it)
+    // The contract can never authorize on its own behalf, so this would be an
+    // unusable admin; reject it explicitly instead of bricking the contract.
     let res = client.try_initialize(&contract_id);
     assert!(res.is_err());
 }
@@ -84,6 +81,13 @@ fn test_initialize_zero_address_protection() {
 #[test]
 #[should_panic]
 fn test_get_admin_rejects_uninitialized() {
+    let env = Env::default();
+    let (_, client) = setup_client(&env);
+    client.get_admin();
+}
+
+#[test]
+fn test_update_param_full_flow() {
     let env = Env::default();
     let (client, admin, _) = initialized_client(&env);
 
@@ -198,6 +202,7 @@ fn test_zk_proof_rejects_wrong_state_root() {
 #[test]
 fn test_batch_update_param_success() {
     let env = Env::default();
+    env.mock_all_auths();
     let contract_id = env.register_contract(None, ControlPlane);
     let client = ControlPlaneClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
@@ -224,6 +229,5 @@ fn test_batch_update_param_success() {
         author: author.clone(),
     };
 
-    env.mock_all_auths();
     client.batch_update_param(&admin, &params, &commitment, &payload);
 }

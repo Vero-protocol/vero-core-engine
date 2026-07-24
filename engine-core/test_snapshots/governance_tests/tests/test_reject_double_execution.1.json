@@ -1,9 +1,10 @@
 {
   "generators": {
-    "address": 3,
+    "address": 2,
     "nonce": 0
   },
   "auth": [
+    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
@@ -37,7 +38,7 @@
   ],
   "ledger": {
     "protocol_version": 21,
-    "sequence_number": 0,
+    "sequence_number": 721,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
@@ -70,6 +71,17 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "MINSTAKE"
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "PROPS"
                         },
                         "val": {
@@ -87,7 +99,7 @@
                                           "symbol": "action_hash"
                                         },
                                         "val": {
-                                          "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                                          "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                                         }
                                       },
                                       {
@@ -287,6 +299,54 @@
                     "symbol": "hash"
                   },
                   "val": {
+                    "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "value"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "EVENT"
+              },
+              {
+                "symbol": "LOG"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "flags"
+                  },
+                  "val": {
+                    "u32": 1026
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "hash"
+                  },
+                  "val": {
                     "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                   }
                 },
@@ -335,7 +395,7 @@
                     "symbol": "hash"
                   },
                   "val": {
-                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                   }
                 },
                 {
@@ -366,12 +426,19 @@
               },
               {
                 "error": {
-                  "auth": "existing_value"
+                  "contract": 5
                 }
               }
             ],
             "data": {
-              "string": "frame is already authorized"
+              "vec": [
+                {
+                  "string": "failing with contract error"
+                },
+                {
+                  "u32": 5
+                }
+              ]
             }
           }
         }
@@ -391,7 +458,7 @@
               },
               {
                 "error": {
-                  "auth": "existing_value"
+                  "contract": 5
                 }
               }
             ],

@@ -156,6 +156,8 @@ mod tests {
         let (admin, _, operators, auditors) = setup(&env);
         env.as_contract(&contract_id, || {
             initialize(&env, &admin, operators, auditors);
+        });
+        env.as_contract(&contract_id, || {
             require_role(&env, &admin, ROLE_ADMIN);
         });
     }
@@ -178,7 +180,7 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, TestContract);
-        let (admin, op1, operators, auditors) = setup(&env);
+        let (admin, _op1, operators, auditors) = setup(&env);
         let rogue = Address::generate(&env);
         env.as_contract(&contract_id, || {
             initialize(&env, &admin, operators, auditors);

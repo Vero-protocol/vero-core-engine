@@ -35,7 +35,7 @@ impl UpgradeableProxy {
         env.storage().instance().set(&ADMIN_KEY, &admin);
         
         // Storage gap to reserve slots and prevent collisions in future upgrades
-        let gap: [u64; 50] = [0; 50];
+        let gap: soroban_sdk::Vec<u64> = soroban_sdk::Vec::from_array(&env, [0u64; 50]);
         env.storage().instance().set(&GAP_KEY, &gap);
     }
 

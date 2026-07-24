@@ -1,18 +1,7 @@
-
-use soroban_sdk::{symbol_short, BytesN, Env, Map, Symbol, Val};
-
 //! Event publishing helpers.
 
-
 use crate::event_struct::CompactEvent;
-use soroban_sdk::{symbol_short, BytesN, Env};
-
-
-/// Publish a deterministic compact event under a single topic for indexing.
-pub fn publish_event(env: &Env, flags: u32, value: u64, hash: BytesN<32>) {
-    let ev = CompactEvent { flags, value, hash };
-    env.events()
-        .publish((symbol_short!("EVENT"), symbol_short!("LOG")), ev);
+use soroban_sdk::{symbol_short, BytesN, Env, Map, Symbol, Val};
 
 /// Publish a compact, structured event.
 ///
@@ -20,11 +9,6 @@ pub fn publish_event(env: &Env, flags: u32, value: u64, hash: BytesN<32>) {
 /// [`crate::event_struct`]. The event topic is intentionally stable so the
 /// off-chain bridge can consume every engine-core event with one subscription.
 pub fn publish_event(env: &Env, flags: u32, value: u64, hash: BytesN<32>) {
-
-    let ev = CompactEvent { flags, value, hash };
-    env.events()
-        .publish((symbol_short!("EVENT"), symbol_short!("LOG")), ev);
-
     let event = CompactEvent { flags, value, hash };
     env.events()
         .publish((symbol_short!("EVENT"), symbol_short!("LOG")), event);
@@ -33,7 +17,6 @@ pub fn publish_event(env: &Env, flags: u32, value: u64, hash: BytesN<32>) {
 /// Return the canonical all-zero hash used when an event has no hash payload.
 pub fn zero_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[0u8; 32])
-
 }
 
 /// Compatibility function for legacy events.

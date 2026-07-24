@@ -8,7 +8,7 @@ description = "Vero Protocol — ZK audit, multi-sig governance, circuit-breaker
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = { version = "21.0.0" }
+soroban-sdk = { version = "21.0.0", features = ["alloc"] }
 sha2        = { version = "0.10", default-features = false }
 
 [dev-dependencies]

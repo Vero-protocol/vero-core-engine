@@ -1,13 +1,3 @@
-
-//! Burn safety helpers.
-
-use crate::event_struct::{ACT_BURN_SAFE, MOD_BURN};
-use crate::event_utils::publish_event;
-use soroban_sdk::{contracterror, panic_with_error, Address, BytesN, Env, String};
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-
 //! Burn module — zero-address and invalid-amount guards.
 
 use crate::event_struct::{ACT_BURN_SAFE, MOD_BURN};
@@ -16,7 +6,6 @@ use soroban_sdk::{contracterror, panic_with_error, Address, Env, String};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-
 pub enum BurnError {
     ZeroAddress = 1,
     InvalidAmount = 2,
@@ -32,9 +21,6 @@ pub fn reject_zero_address(env: &Env, to: &Address) {
     }
 }
 
-
-/// Validate a burn recipient and emit a compact audit event.
-
 fn amount_to_event_value(env: &Env, amount: i128) -> u64 {
     if amount <= 0 || amount > u64::MAX as i128 {
         panic_with_error!(env, BurnError::InvalidAmount);
@@ -43,24 +29,12 @@ fn amount_to_event_value(env: &Env, amount: i128) -> u64 {
 }
 
 /// Burn-safe transfer wrapper. Validates recipient/amount before emitting.
-
 pub fn burn_to(env: &Env, to: &Address, amount: i128) {
     crate::circuit_breaker::assert_closed(env);
     reject_zero_address(env, to);
 
-    if amount <= 0 {
-        panic_with_error!(env, BurnError::InvalidAmount);
-    }
-    publish_event(
-        env,
-        MOD_BURN | ACT_BURN_SAFE,
-        amount as u64,
-        BytesN::from_array(env, &[0u8; 32]),
-    );
-
     let value = amount_to_event_value(env, amount);
     publish_event(env, MOD_BURN | ACT_BURN_SAFE, value, zero_hash(env));
-
 }
 
 #[cfg(test)]

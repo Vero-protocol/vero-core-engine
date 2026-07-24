@@ -8,20 +8,23 @@ pub enum GuardError {
     ReentrancyDetected = 1,
 }
 
-pub struct ReentrancyGuard;
+pub struct ReentrancyGuard<'a> {
+    env: &'a Env,
+}
 
-impl ReentrancyGuard {
-    pub fn new(env: &Env) -> Self {
+impl<'a> ReentrancyGuard<'a> {
+    pub fn new(env: &'a Env) -> Self {
         if env.storage().temporary().has(&KEY_REENTRY) {
             panic_with_error!(env, GuardError::ReentrancyDetected);
         }
         env.storage().temporary().set(&KEY_REENTRY, &true);
-        Self
+        Self { env }
     }
 }
 
-impl Drop for ReentrancyGuard {
+impl Drop for ReentrancyGuard<'_> {
     fn drop(&mut self) {
+        self.env.storage().temporary().remove(&KEY_REENTRY);
     }
 }
 

@@ -43,7 +43,9 @@ fn allowed_transition(from: ProtocolState, to: ProtocolState) -> bool {
 }
 
 pub fn init(env: &Env) {
-    env.storage().instance().set(&KEY_STATE, &ProtocolState::Pending);
+    env.storage()
+        .instance()
+        .set(&KEY_STATE, &(ProtocolState::Pending as u32));
 }
 
 pub fn get_state(env: &Env) -> ProtocolState {
@@ -59,7 +61,7 @@ pub fn transition_to(env: &Env, next: ProtocolState) {
     if !allowed_transition(current, next) {
         panic_with_error!(env, StateError::InvalidTransition);
     }
-    env.storage().instance().set(&KEY_STATE, &next);
+    env.storage().instance().set(&KEY_STATE, &(next as u32));
     publish_event(
         env,
         MOD_CORE | ACT_TRANSITION,

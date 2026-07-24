@@ -1,25 +1,5 @@
-
-//! ZK-audit layer: ordered state-commitment validation.
-//!
-//! State-changing code can call `validate_transition` with an off-chain produced
-//! commitment. The module enforces circuit-breaker status, author authentication,
-//! monotonic sequencing, and deterministic hash chaining:
-//!
-//! `state_hash = sha256(previous_state_hash || sequence || payload)`.
-
-use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Symbol};
-
 //! ZK-audit layer — state-commitment validation for the Vero Protocol.
 //!
-
-//! Each contract call that mutates state must pass through `validate_transition`.
-//! Off-chain provers submit `StateCommitment`s; this module verifies ordering
-//! and hash integrity before they are persisted.
-
-use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol, Map, BytesN, IntoVal};
-
 //! Every state-changing control-plane path can anchor its transition here. The
 //! commitment chain is deliberately simple and audit-friendly:
 //!
@@ -28,20 +8,12 @@ use soroban_sdk::{contracterror, panic_with_error, symbol_short, Env, Symbol, Ma
 //! The module enforces signer authentication, replay protection, circuit-breaker
 //! safety and deterministic event emission.
 
-
 use crate::circuit_breaker::assert_closed;
-
-use crate::event_utils::{publish_event, publish_event_legacy};
-use crate::event_struct::{MOD_AUDIT, ACT_COMMIT};
-
 use crate::event_struct::{ACT_COMMIT, MOD_AUDIT};
-use crate::event_utils::publish_event;
+use crate::event_utils::{publish_event, publish_event_legacy};
 use crate::types::StateCommitment;
-
-
 use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Symbol};
-
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, IntoVal, Map, Symbol};
 
 const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -89,36 +61,6 @@ pub fn integrity_check(env: &Env, commitment: &StateCommitment, payload: &[u8]) 
     expected == commitment.state_hash.to_array()
 }
 
-
-/// Return the last accepted sequence number.
-pub fn last_sequence(env: &Env) -> u64 {
-    env.storage().instance().get(&KEY_SEQ).unwrap_or(0)
-}
-
-/// Return the last accepted state hash.
-pub fn previous_hash(env: &Env) -> BytesN<32> {
-    env.storage()
-        .instance()
-        .get(&KEY_PREV)
-        .unwrap_or_else(|| BytesN::from_array(env, &[0u8; 32]))
-}
-
-/// Validate and persist a new state commitment.
-pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
-    crate::non_reentrant!(env);
-    assert_closed(env);
-    commitment.author.require_auth();
-
-    let last_seq = last_sequence(env);
-    if commitment.sequence <= last_seq {
-        panic_with_error!(env, AuditError::ReplayedSequence);
-    }
-
-    let prev_hash = previous_hash(env).to_array();
-    let expected = compute_commitment(&prev_hash, commitment.sequence, payload);
-    let actual = commitment.state_hash.to_array();
-    if expected != actual {
-
 /// Validate and record a new `StateCommitment`.
 ///
 /// Panics if:
@@ -153,7 +95,6 @@ pub(crate) fn validate_transition_inner(
         panic_with_error!(env, AuditError::HashMismatch);
     }
 
-    let actual = commitment.state_hash.to_array();
     env.storage().instance().set(&KEY_SEQ, &commitment.sequence);
     env.storage().instance().set(&KEY_PREV, &commitment.state_hash);
 
@@ -169,24 +110,12 @@ pub(crate) fn validate_transition_inner(
     payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
     payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
     publish_event_legacy(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
-
-    #[contract]
-    pub struct TestContract;
-
-    #[contractimpl]
-    impl TestContract {}
-
-
     use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
-
 
     #[soroban_sdk::contract]
     pub struct TestContract;
@@ -205,7 +134,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn valid_first_commitment() {
         let env = Env::default();
@@ -214,23 +142,11 @@ mod tests {
         let author = Address::generate(&env);
         env.as_contract(&contract_id, || {
             let payload = b"state_payload_v1";
-
-            let hash = compute_commitment(&[0u8; 32], 1, payload);
-            let c = StateCommitment {
-                state_hash: BytesN::from_array(&env, &hash),
-                sequence: 1,
-                ledger: 100,
-                author: Address::generate(&env),
-            };
-            validate_transition(&env, &c, payload);
-            assert_eq!(last_sequence(&env), 1);
-
             let c = commitment(&env, author, 1, payload);
             assert!(integrity_check(&env, &c, payload));
             validate_transition(&env, &c, payload);
             assert_eq!(get_last_sequence(&env), 1);
             assert_eq!(get_state_hash(&env), c.state_hash);
-
         });
     }
 
@@ -243,17 +159,7 @@ mod tests {
         let author = Address::generate(&env);
         env.as_contract(&contract_id, || {
             let payload = b"payload";
-
-            let hash = compute_commitment(&[0u8; 32], 1, payload);
-            let c = StateCommitment {
-                state_hash: BytesN::from_array(&env, &hash),
-                sequence: 1,
-                ledger: 100,
-                author: Address::generate(&env),
-            };
-
             let c = commitment(&env, author, 1, payload);
-
             validate_transition(&env, &c, payload);
             validate_transition(&env, &c, payload);
         });

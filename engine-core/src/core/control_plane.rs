@@ -56,6 +56,8 @@ pub enum ControlPlaneError {
     NotInitialized = 3,
     InvalidPayload = 4,
     ArithmeticOverflow = 5,
+    ReservedKey = 6,
+    InvalidAdmin = 7,
 }
 
 #[contract]
@@ -74,11 +76,25 @@ impl ControlPlane {
         if env.storage().instance().has(&KEY_INIT) {
             panic_with_error!(&env, ControlPlaneError::AlreadyInitialized);
         }
+        if admin == env.current_contract_address() {
+            panic_with_error!(&env, ControlPlaneError::InvalidAdmin);
+        }
 
         admin.require_auth();
         env.storage().instance().set(&KEY_ADMIN, &admin);
         env.storage().instance().set(&KEY_INIT, &true);
         env.storage().instance().set(&KEY_PARAM_COUNT, &0u64);
+        crate::version::init_version(&env);
+    }
+
+    /// Return the deployed contract logic version as (major, minor, patch).
+    pub fn version(_env: Env) -> (u32, u32, u32) {
+        crate::version::version()
+    }
+
+    /// Return the on-chain storage schema version.
+    pub fn contract_version(_env: Env) -> u32 {
+        crate::version::contract_version()
     }
 
     /// Return the configured administrator, or `None` before initialization.
@@ -119,11 +135,6 @@ impl ControlPlane {
             .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized))
     }
 
-    /// Return a previously set protocol parameter, or `None`.
-    pub fn get_param(env: Env, param_key: Symbol) -> Option<u64> {
-        env.storage().instance().get(&param_key)
-    }
-
     /// Mutate a protocol parameter securely.
     ///
     /// Security properties:
@@ -143,6 +154,10 @@ impl ControlPlane {
         crate::non_reentrant!(&env);
         require_admin(&env, &caller);
         circuit_breaker::assert_closed(&env);
+
+        if is_reserved_key(&param_key) {
+            panic_with_error!(&env, ControlPlaneError::ReservedKey);
+        }
 
         let payload_raw = payload.to_array();
         audit::validate_transition_inner(&env, &commitment, &payload_raw);
@@ -227,28 +242,23 @@ impl ControlPlane {
         commitment: StateCommitment,
         payload: BytesN<32>,
     ) {
-        caller.require_auth();
-
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&KEY_ADMIN)
-            .unwrap_or_else(|| panic_with_error!(&env, ControlPlaneError::NotInitialized));
-
-        if caller != admin {
-            panic_with_error!(&env, ControlPlaneError::Unauthorized);
-        }
-
-        // Ensure the protocol isn't paused
-        assert_closed(&env);
+        crate::non_reentrant!(&env);
+        require_admin(&env, &caller);
+        circuit_breaker::assert_closed(&env);
 
         // ZK-ready integrity check (enforces no replays and valid hash)
-        validate_transition(&env, &commitment, &payload.to_array());
+        audit::validate_transition_inner(&env, &commitment, &payload.to_array());
 
-        // Update the parameters in batch
+        for param in params.iter() {
+            if is_reserved_key(&param.0) {
+                panic_with_error!(&env, ControlPlaneError::ReservedKey);
+            }
+        }
+
         for param in params.iter() {
             env.storage().instance().set(&param.0, &param.1);
         }
+        increment_param_count(&env);
     }
 }
 
