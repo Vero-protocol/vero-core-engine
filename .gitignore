@@ -1,6 +1,9 @@
 # Rust
 target/
 
+# Soroban auto-generated test snapshots (non-deterministic diagnostic output)
+src/audit-guard/test_snapshots/
+
 # Node
 node_modules/
 engine-bridge/dist/
