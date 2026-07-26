@@ -1,4 +1,5 @@
 use super::control_plane::{ControlPlane, ControlPlaneClient};
+use super::proxy::{UpgradeableProxy, UpgradeableProxyClient};
 use crate::audit::compute_commitment;
 use crate::core::zk_hooks;
 use crate::types::StateCommitment;
@@ -230,4 +231,91 @@ fn test_batch_update_param_success() {
     };
 
     client.batch_update_param(&admin, &params, &commitment, &payload);
+}
+
+fn proxy_initialized_client(env: &Env) -> (UpgradeableProxyClient<'_>, Address) {
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, UpgradeableProxy);
+    let client = UpgradeableProxyClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    client.init(&admin);
+    (client, admin)
+}
+
+fn proxy_setup_client(env: &Env) -> UpgradeableProxyClient<'_> {
+    let contract_id = env.register_contract(None, UpgradeableProxy);
+    UpgradeableProxyClient::new(env, &contract_id)
+}
+
+#[test]
+fn test_proxy_upgrade_success() {
+    let env = Env::default();
+    let (client, _admin) = proxy_initialized_client(&env);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.upgrade(&new_wasm_hash);
+}
+
+#[test]
+fn test_proxy_upgrade_rejects_zero_hash() {
+    let env = Env::default();
+    let (client, _admin) = proxy_initialized_client(&env);
+
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let result = client.try_upgrade(&zero_hash);
+    assert!(result.is_err());
+}
+
+#[test]
+#[should_panic]
+fn test_proxy_upgrade_rejects_pre_init() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = proxy_setup_client(&env);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.upgrade(&new_wasm_hash);
+}
+
+#[test]
+#[should_panic]
+fn test_proxy_verify_integrity_rejects_pre_init() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = proxy_setup_client(&env);
+
+    let author = Address::generate(&env);
+    let payload_bytes = Bytes::from_array(&env, &[1u8; 32]);
+    let payload_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let hash = compute_commitment(&[0u8; 32], 0, &payload_hash.to_array());
+    let commitment = StateCommitment {
+        sequence: 0,
+        state_hash: BytesN::from_array(&env, &hash),
+        ledger: env.ledger().sequence(),
+        author: author.clone(),
+    };
+    client.verify_integrity(&commitment, &payload_bytes);
+}
+
+#[test]
+fn test_proxy_upgrade_rejects_non_admin() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, UpgradeableProxy);
+    let client = UpgradeableProxyClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("ADMIN"), &admin);
+        let gap: soroban_sdk::Vec<u64> =
+            soroban_sdk::Vec::from_array(&env, [0u64; 50]);
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("GAP"), &gap);
+    });
+
+    let new_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let result = client.try_upgrade(&new_wasm_hash);
+    assert!(result.is_err());
 }

@@ -27,6 +27,8 @@ pub struct UpgradeableProxy;
 impl UpgradeableProxy {
     /// Initialize the proxy with an admin address and a storage gap.
     pub fn init(env: Env, admin: Address) {
+        crate::non_reentrant!(&env);
+
         if env.storage().instance().has(&ADMIN_KEY) {
             panic_with_error!(&env, ProxyError::AlreadyInitialized);
         }
@@ -42,6 +44,8 @@ impl UpgradeableProxy {
     /// Upgrade the contract's WASM code. Only the admin can perform this operation.
     /// This provides a direct admin-controlled upgrade path.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        crate::non_reentrant!(&env);
+
         if !env.storage().instance().has(&ADMIN_KEY) {
             panic_with_error!(&env, ProxyError::NotInitialized);
         }
@@ -58,6 +62,8 @@ impl UpgradeableProxy {
     
     /// ZK-ready integrity check invoked via the audit layer
     pub fn verify_integrity(env: Env, commitment: StateCommitment, payload: Bytes) {
+        crate::non_reentrant!(&env);
+
         // Copy bytes to verify transition
         let mut payload_buf = alloc::vec::Vec::new();
         payload_buf.resize(payload.len() as usize, 0);
