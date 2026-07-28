@@ -10,15 +10,14 @@ on:
       - main
 
 jobs:
-  build-and-test:
+  engine-core:
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
-    # Ensured no duplicate env keys are present, validating YAML syntax
-    
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -26,9 +25,67 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
           override: true
-          
+
       - name: Build contracts
         run: cargo build --target wasm32-unknown-unknown --release
 
       - name: Run tests
         run: cargo test
+
+  engine-bridge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine-bridge
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: engine-bridge/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
