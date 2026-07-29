@@ -15,14 +15,33 @@ interface CacheItem<T> {
  *
  * Implements SWR caching to solve slow load times when fetching chain state.
  * Returns stale data immediately while fetching fresh data in the background.
+ * Cache is bounded by maxEntries via LRU eviction to prevent unbounded growth.
  */
 export class ChainStateCache {
   private cache = new Map<string, CacheItem<any>>();
 
   constructor(
     private readonly rpc: RpcClient,
-    private readonly defaultStaleTimeMs: number = 2000
+    private readonly defaultStaleTimeMs: number = 2000,
+    private readonly maxEntries: number = Infinity
   ) {}
+
+  private touch(key: string): void {
+    if (this.cache.has(key)) {
+      const item = this.cache.get(key)!;
+      this.cache.delete(key);
+      this.cache.set(key, item);
+    }
+  }
+
+  private evictIfNeeded(): void {
+    while (this.cache.size > this.maxEntries) {
+      const lruKey = this.cache.keys().next().value;
+      if (lruKey !== undefined) {
+        this.cache.delete(lruKey);
+      }
+    }
+  }
 
   /**
    * Fetches data using SWR strategy.
@@ -40,6 +59,7 @@ export class ChainStateCache {
     const item = this.cache.get(key) as CacheItem<T> | undefined;
 
     if (item) {
+      this.touch(key);
       const isStale = now - item.updatedAt > staleTimeMs;
       
       if (isStale && !item.isRevalidating) {
@@ -55,6 +75,7 @@ export class ChainStateCache {
     // Cache miss, fetch synchronously
     const data = await fetcher(this.rpc);
     this.cache.set(key, { data, updatedAt: Date.now(), isRevalidating: false });
+    this.evictIfNeeded();
     return data;
   }
 
@@ -79,5 +100,10 @@ export class ChainStateCache {
    */
   invalidate(key: string): void {
     this.cache.delete(key);
+  }
+
+  /** Evict all entries */
+  clear(): void {
+    this.cache.clear();
   }
 }
