@@ -252,7 +252,11 @@ fn test_proxy_upgrade_success() {
     let env = Env::default();
     let (client, _admin) = proxy_initialized_client(&env);
 
-    let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    // Empty Wasm is accepted by the test host as a stand-in for a real
+    // uploaded contract (soroban-env-host allows a zero-byte upload under
+    // `testutils` for exactly this purpose); `update_current_contract_wasm`
+    // requires the hash to correspond to a Wasm actually present in storage.
+    let new_wasm_hash = env.deployer().upload_contract_wasm(Bytes::new(&env));
     client.upgrade(&new_wasm_hash);
 }
 
