@@ -121,4 +121,73 @@ describe("ChainStateCache", () => {
       expect((cache as any).cache.size).toBe(0);
     });
   });
+
+  describe("in-flight deduplication (AC-1, AC-2, AC-3)", () => {
+    it("AC-1 + AC-3: N concurrent getSwr() calls for the same missing key result in exactly one fetcher invocation", async () => {
+      const rpc = makeRpc();
+      const cache = new ChainStateCache(rpc, 5000, 10);
+      let calls = 0;
+      const fetcher = async () => {
+        calls++;
+        await new Promise(r => setTimeout(r, 20));
+        return { v: calls };
+      };
+
+      await Promise.all([
+        cache.getSwr("k", fetcher),
+        cache.getSwr("k", fetcher),
+        cache.getSwr("k", fetcher),
+      ]);
+
+      expect(calls).toBe(1);
+    });
+
+    it("AC-2: all concurrent callers receive the correct data from the shared fetch", async () => {
+      const rpc = makeRpc();
+      const cache = new ChainStateCache(rpc, 5000, 10);
+      const fetcher = async () => {
+        await new Promise(r => setTimeout(r, 20));
+        return { value: 99 };
+      };
+
+      const results = await Promise.all([
+        cache.getSwr("m", fetcher),
+        cache.getSwr("m", fetcher),
+        cache.getSwr("m", fetcher),
+      ]);
+
+      for (const result of results) {
+        expect(result.value).toBe(99);
+      }
+    });
+
+    it("propagates fetch errors to all concurrent callers", async () => {
+      const rpc = makeRpc();
+      const cache = new ChainStateCache(rpc, 5000, 10);
+      const fetchError = new Error("rpc unavailable");
+      const fetcher = async (): Promise<{ v: number }> => {
+        await new Promise(r => setTimeout(r, 10));
+        throw fetchError;
+      };
+
+      const results = await Promise.allSettled([
+        cache.getSwr("e", fetcher),
+        cache.getSwr("e", fetcher),
+      ]);
+
+      for (const result of results) {
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected") {
+          expect(result.reason).toBe(fetchError);
+        }
+      }
+
+      // After failure, the inflight entry must be cleared so a fresh attempt succeeds.
+      let calls = 0;
+      const recoveryFetcher = async () => { calls++; return { v: 1 }; };
+      const recovered = await cache.getSwr("e", recoveryFetcher);
+      expect(recovered.v).toBe(1);
+      expect(calls).toBe(1);
+    });
+  });
 });

@@ -19,6 +19,8 @@ interface CacheItem<T> {
  */
 export class ChainStateCache {
   private cache = new Map<string, CacheItem<any>>();
+  /** Tracks one in-flight fetch Promise per key to deduplicate concurrent cache-miss callers. */
+  private readonly inflight = new Map<string, Promise<any>>();
 
   constructor(
     private readonly rpc: RpcClient,
@@ -45,6 +47,12 @@ export class ChainStateCache {
 
   /**
    * Fetches data using SWR strategy.
+   *
+   * Cache-miss behaviour: if another caller is already fetching the same key,
+   * the new caller awaits the same in-flight Promise instead of issuing its own
+   * RPC request. This prevents the "thundering herd" problem on concurrent
+   * misses for hot keys.
+   *
    * @param key Unique cache key
    * @param fetcher Async function to fetch fresh data
    * @param options SWR options
@@ -61,7 +69,7 @@ export class ChainStateCache {
     if (item) {
       this.touch(key);
       const isStale = now - item.updatedAt > staleTimeMs;
-      
+
       if (isStale && !item.isRevalidating) {
         item.isRevalidating = true;
         // Background revalidation (fire and forget)
@@ -72,11 +80,27 @@ export class ChainStateCache {
       return item.data;
     }
 
-    // Cache miss, fetch synchronously
-    const data = await fetcher(this.rpc);
-    this.cache.set(key, { data, updatedAt: Date.now(), isRevalidating: false });
-    this.evictIfNeeded();
-    return data;
+    // Cache miss — deduplicate concurrent fetches for the same key.
+    const existing = this.inflight.get(key) as Promise<T> | undefined;
+    if (existing) {
+      return existing;
+    }
+
+    const fetchPromise: Promise<T> = fetcher(this.rpc).then(
+      data => {
+        this.cache.set(key, { data, updatedAt: Date.now(), isRevalidating: false });
+        this.evictIfNeeded();
+        this.inflight.delete(key);
+        return data;
+      },
+      err => {
+        this.inflight.delete(key);
+        throw err;
+      }
+    );
+
+    this.inflight.set(key, fetchPromise);
+    return fetchPromise;
   }
 
   private async revalidate<T>(
