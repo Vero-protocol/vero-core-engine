@@ -54,12 +54,12 @@ All commit messages **must** conform to [Conventional Commits v1.0](https://www.
 
 ### Allowed Scopes
 
-`contracts` · `relayer` · `dashboard` · `governance` · `zk` · `ci` · `deps` · `docs`
+`engine-core` (or `contracts`) · `engine-bridge` (or `relayer`) · `dashboard` · `governance` · `zk` · `ci` · `deps` · `docs`
 
 ### Examples
 
 ```
-feat(contracts): add ZK-audit hook interface to core state machine
+feat(engine-core): add ZK-audit hook interface to core state machine
 
 Implements the hook interface defined in #3. All state transitions
 now emit a structured audit event consumable by the ZK proof layer.
@@ -68,7 +68,7 @@ Closes #3
 ```
 
 ```
-security(relayer): enforce Ed25519 signature verification on all receipts
+security(engine-bridge): enforce Ed25519 signature verification on all receipts
 
 BREAKING CHANGE: receipt schema v1 is no longer accepted; callers
 must upgrade to schema v2 before this release.
@@ -76,11 +76,7 @@ must upgrade to schema v2 before this release.
 
 ### Enforcement
 
-A `commitlint` hook runs on every commit. Violations block the push. Configure locally:
-
-```bash
-npm run prepare   # installs husky hooks
-```
+A `commitlint` hook runs on every commit. Violations block the push.
 
 ---
 
@@ -88,13 +84,12 @@ npm run prepare   # installs husky hooks
 
 ```
 main          ← protected; requires 2 approvals + passing CI
-  └─ milestone/M1-core-contracts
-       └─ feat/contracts-zk-audit-hook     ← your branch
-  └─ milestone/M2-relayer
-  └─ hotfix/critical-patch-description    ← hotfixes only
+  └─ feat/<short-slug>                    ← your branch
+  └─ fix/<short-slug>                     ← bugfix branch
+  └─ hotfix/<short-slug>                  ← hotfixes only
 ```
 
-- Branch from the relevant `milestone/*` branch, never directly from `main`.
+- Branch from `main` or the relevant milestone branch.
 - Name branches: `<type>/<short-slug>` (e.g., `feat/zk-audit-hook`, `fix/receipt-nonce-collision`).
 - Delete branches after merge.
 
@@ -104,8 +99,8 @@ main          ← protected; requires 2 approvals + passing CI
 
 ### Before Opening a PR
 
-- [ ] All tests pass locally: `npm test`
-- [ ] Linter passes: `npm run lint`
+- [ ] All tests pass locally (see [Development Setup](#development-setup))
+- [ ] Linter passes in modified packages (`npm run lint` / `cargo check`)
 - [ ] New code has tests (unit + integration where applicable)
 - [ ] Commit history is clean — squash WIP commits
 - [ ] PR references the issue it closes: `Closes #N`
@@ -115,7 +110,7 @@ main          ← protected; requires 2 approvals + passing CI
 Follow the same Conventional Commits format:
 
 ```
-feat(contracts): implement ZK-audit hook interface
+feat(engine-core): implement ZK-audit hook interface
 ```
 
 ### PR Description Template
@@ -168,7 +163,7 @@ Review within **72 hours** of assignment. Check:
 2. **Security** — New attack surface? Input validation? Auth bypass?
 3. **Protocol integrity** — Does this maintain auditability and ZK-readiness?
 4. **Test quality** — Are tests asserting behavior or just achieving coverage?
-5. **Commit hygiene** — Are commits atomic and correctly scoped?
+5. **Commit hygiene** Are commits atomic and correctly scoped?
 
 ### Review Verdicts
 
@@ -182,32 +177,45 @@ Review within **72 hours** of assignment. Check:
 ### Merging
 
 - **Squash merge** for feature branches (single clean commit on `main`).
-- **Merge commit** for `milestone/*` into `main` (preserves history).
 - Only maintainers with write access may merge into `main`.
 
 ---
 
 ## Development Setup
 
-```bash
-# Install all deps
-npm ci
+The repository is structured into modular components:
 
-# Install Rust toolchain (for contracts)
+- `engine-core/` — Soroban smart contracts in Rust
+- `engine-bridge/` — Event bridge and relayer in Node.js / TypeScript
+- `dashboard/` — Frontend monitoring dashboard in React / Vite
+
+### Quick Setup
+
+```bash
+# 1. Smart Contracts (engine-core)
 rustup target add wasm32-unknown-unknown
 cargo install stellar-cli --locked
+cargo test # or: cargo test --manifest-path engine-core/Cargo.toml
+cargo build --target wasm32-unknown-unknown --release
 
-# Install hooks
-npm run prepare
-
-# Run full test suite
+# 2. Engine Bridge (engine-bridge)
+cd engine-bridge
+npm ci
+npm run build
 npm test
+npm run lint
+cd ..
 
-# Run contract tests only
-cd contracts && cargo test
+# 3. Dashboard (dashboard)
+cd dashboard
+npm ci
+npm run build
+npm test
+npm run lint
+cd ..
 
-# Run relayer tests only
-cd relayer && npm test
+# 4. Engine Automated Build & Health Check
+bash BUILD_ENGINE.sh
 ```
 
 ---
@@ -216,9 +224,9 @@ cd relayer && npm test
 
 | Layer | Minimum Requirement |
 |---|---|
-| Smart contracts | Unit tests for every public function; fuzz tests for state transitions |
-| Relayer | Unit + integration tests; mock Horizon responses |
-| Dashboard API | Unit tests + OpenAPI contract tests |
+| Smart contracts (`engine-core`) | Unit tests for every public function; fuzz tests for state transitions |
+| Relayer (`engine-bridge`) | Unit + integration tests; mock Horizon responses |
+| Dashboard (`dashboard`) | Unit tests + UI component tests |
 | E2E | Smoke test must pass on testnet before PR merge |
 
 Coverage threshold: **80% line coverage** enforced in CI. Security-critical paths require **100%**.
