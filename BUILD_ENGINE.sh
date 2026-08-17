@@ -54,8 +54,8 @@ ENV
     log "Created .env.example"
   fi
 
-  # Symlink security docs into security/
-  [[ -L "$SECURITY_DIR/SECURITY.md" ]] || ln -s "$ROOT/SECURITY.md" "$SECURITY_DIR/SECURITY.md"
+  # Symlink security docs into security/ (use relative link and -f for idempotency)
+  ln -sf "../SECURITY.md" "$SECURITY_DIR/SECURITY.md"
 
   log "Scaffold complete."
 }
