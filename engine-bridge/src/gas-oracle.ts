@@ -59,13 +59,13 @@ export class GasOracle {
    *
    * Fail-closed: throws if the value cannot be fetched/parsed.
    */
-  async fetchBaseFee(rpc: RpcClient): Promise<BaseFeeStats> {
+  async fetchBaseFee(rpc: RpcClient, cacheTtlMs?: number): Promise<BaseFeeStats> {
     const now = Date.now();
     if (this.baseFeeCache && this.baseFeeCache.expiresAt > now) {
       return this.baseFeeCache.value;
     }
 
-    const ttl = DEFAULTS.cacheTtlMs;
+    const ttl = cacheTtlMs !== undefined ? cacheTtlMs : DEFAULTS.cacheTtlMs;
 
     const stats = await rpc.call(async (server: any) => {
       // Horizon/Soroban endpoint exposed via stellar-sdk.
@@ -108,16 +108,7 @@ export class GasOracle {
   async resolveFee(rpc: RpcClient, opts: FeeResolutionOptions): Promise<ResolvedFee> {
     const cacheTtlMs = opts.cacheTtlMs ?? DEFAULTS.cacheTtlMs;
 
-    // For now, caching is implemented with a GasOracle-level TTL.
-    // If caller provides a different TTL, we bypass the cache to ensure
-    // the estimate uses fresh base fee.
-    if (cacheTtlMs !== DEFAULTS.cacheTtlMs) {
-      this.baseFeeCache = undefined;
-    }
-
-    const stats = await this.fetchBaseFee(rpc);
+    const stats = await this.fetchBaseFee(rpc, cacheTtlMs);
     return this.estimateFee(stats, opts);
   }
 }
-
-
