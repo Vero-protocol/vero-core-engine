@@ -54,12 +54,14 @@ All commit messages **must** conform to [Conventional Commits v1.0](https://www.
 
 ### Allowed Scopes
 
-`contracts` · `relayer` · `dashboard` · `governance` · `zk` · `ci` · `deps` · `docs`
+`engine-core` · `engine-bridge` · `dashboard` · `governance` · `zk` · `ci` · `deps` · `docs`
+
+`engine-core` and `engine-bridge` map to the directories of the same name; `governance` and `zk` are logical scopes for changes inside `engine-core`.
 
 ### Examples
 
 ```
-feat(contracts): add ZK-audit hook interface to core state machine
+feat(engine-core): add ZK-audit hook interface to core state machine
 
 Implements the hook interface defined in #3. All state transitions
 now emit a structured audit event consumable by the ZK proof layer.
@@ -68,7 +70,7 @@ Closes #3
 ```
 
 ```
-security(relayer): enforce Ed25519 signature verification on all receipts
+security(engine-bridge): enforce Ed25519 signature verification on all receipts
 
 BREAKING CHANGE: receipt schema v1 is no longer accepted; callers
 must upgrade to schema v2 before this release.
@@ -76,11 +78,7 @@ must upgrade to schema v2 before this release.
 
 ### Enforcement
 
-A `commitlint` hook runs on every commit. Violations block the push. Configure locally:
-
-```bash
-npm run prepare   # installs husky hooks
-```
+Commit messages must follow the Conventional Commits format above; they are enforced during code review. Since feature branches are squash-merged onto `main` using the PR title, keep PR titles in the same format.
 
 ---
 
@@ -88,9 +86,9 @@ npm run prepare   # installs husky hooks
 
 ```
 main          ← protected; requires 2 approvals + passing CI
-  └─ milestone/M1-core-contracts
-       └─ feat/contracts-zk-audit-hook     ← your branch
-  └─ milestone/M2-relayer
+  └─ milestone/M1-engine-core
+       └─ feat/engine-core-zk-audit-hook   ← your branch
+  └─ milestone/M2-engine-bridge
   └─ hotfix/critical-patch-description    ← hotfixes only
 ```
 
@@ -104,8 +102,8 @@ main          ← protected; requires 2 approvals + passing CI
 
 ### Before Opening a PR
 
-- [ ] All tests pass locally: `npm test`
-- [ ] Linter passes: `npm run lint`
+- [ ] All tests pass locally: `cargo test` from the repo root, plus `npm test` in `engine-bridge/` and `dashboard/`
+- [ ] Linters pass: `npm run lint` in `engine-bridge/` and `dashboard/`
 - [ ] New code has tests (unit + integration where applicable)
 - [ ] Commit history is clean — squash WIP commits
 - [ ] PR references the issue it closes: `Closes #N`
@@ -115,7 +113,7 @@ main          ← protected; requires 2 approvals + passing CI
 Follow the same Conventional Commits format:
 
 ```
-feat(contracts): implement ZK-audit hook interface
+feat(engine-core): implement ZK-audit hook interface
 ```
 
 ### PR Description Template
@@ -189,25 +187,29 @@ Review within **72 hours** of assignment. Check:
 
 ## Development Setup
 
-```bash
-# Install all deps
-npm ci
+The repo has no root `package.json`; the Cargo workspace at the repo root covers `engine-core/` and `src/audit-guard/`, while `engine-bridge/` and `dashboard/` are separate npm projects. Node 20 is used in CI.
 
-# Install Rust toolchain (for contracts)
+```bash
+# 1. Install Rust toolchain (for engine-core contracts)
 rustup target add wasm32-unknown-unknown
 cargo install stellar-cli --locked
 
-# Install hooks
-npm run prepare
+# 2. Run contract tests and the WASM build from the repo root
+cargo test
+cargo build --target wasm32-unknown-unknown --release
 
-# Run full test suite
-npm test
+# 3. engine-bridge (TypeScript relayer service)
+cd engine-bridge && npm ci && npm test
 
-# Run contract tests only
-cd contracts && cargo test
+# 4. dashboard (TypeScript/React frontend)
+cd dashboard && npm ci && npm test
+```
 
-# Run relayer tests only
-cd relayer && npm test
+Build and lint each npm project exactly as CI does:
+
+```bash
+cd engine-bridge && npm run build && npm run lint
+cd dashboard && npm run build && npm run lint
 ```
 
 ---
@@ -216,8 +218,8 @@ cd relayer && npm test
 
 | Layer | Minimum Requirement |
 |---|---|
-| Smart contracts | Unit tests for every public function; fuzz tests for state transitions |
-| Relayer | Unit + integration tests; mock Horizon responses |
+| Engine-core (smart contracts) | Unit tests for every public function; fuzz tests for state transitions |
+| Engine-bridge (relayer) | Unit + integration tests; mock Horizon responses |
 | Dashboard API | Unit tests + OpenAPI contract tests |
 | E2E | Smoke test must pass on testnet before PR merge |
 
