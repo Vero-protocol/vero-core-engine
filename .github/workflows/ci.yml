@@ -10,6 +10,15 @@ on:
       - main
 
 jobs:
+  repo-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify security/SECURITY.md
+        run: bash scripts/check-security-md.sh
+
   engine-core:
     runs-on: ubuntu-latest
     env:

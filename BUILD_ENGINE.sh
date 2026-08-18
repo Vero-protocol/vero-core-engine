@@ -19,6 +19,42 @@ log()  { echo -e "${GREEN}[BUILD]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail() { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 
+# Create security/SECURITY.md as a symlink to root SECURITY.md (copy fallback on Windows).
+link_security_md() {
+  local target="$ROOT/SECURITY.md"
+  local link="$SECURITY_DIR/SECURITY.md"
+  local rel_target="../SECURITY.md"
+
+  if [[ ! -f "$target" ]]; then
+    warn "Root SECURITY.md not found — skipping security/ link"
+    return 0
+  fi
+
+  mkdir -p "$SECURITY_DIR"
+
+  if [[ -L "$link" ]]; then
+    local current
+    current="$(readlink "$link" 2>/dev/null || true)"
+    if [[ "$current" == "$rel_target" || "$current" == "$target" || "$current" == "../SECURITY.md" ]]; then
+      return 0
+    fi
+  fi
+
+  # Remove broken regular file (e.g. path stub from ln -s without symlink support).
+  rm -f "$link"
+
+  if ln -sf "$rel_target" "$link" 2>/dev/null && [[ -L "$link" ]]; then
+    log "Linked security/SECURITY.md → ../SECURITY.md"
+    return 0
+  fi
+
+  rm -f "$link"
+  warn "Could not create symlink for security/SECURITY.md."
+  warn "Windows requires Developer Mode or elevated privileges for symlinks."
+  warn "Falling back to copying root SECURITY.md content."
+  cp "$target" "$link"
+}
+
 # ── 1. SCAFFOLD ───────────────────────────────────────────────────────────────
 scaffold() {
   log "Scaffolding directory structure…"
@@ -54,8 +90,7 @@ ENV
     log "Created .env.example"
   fi
 
-  # Symlink security docs into security/
-  [[ -L "$SECURITY_DIR/SECURITY.md" ]] || ln -s "$ROOT/SECURITY.md" "$SECURITY_DIR/SECURITY.md"
+  link_security_md
 
   log "Scaffold complete."
 }
@@ -114,6 +149,8 @@ health() {
   check "engine-bridge/src/event-propagator.ts exists" test -f "$BRIDGE/src/event-propagator.ts"
   check "engine-bridge/src/heartbeat-monitor.ts exists" test -f "$BRIDGE/src/heartbeat-monitor.ts"
   check "SECURITY.md exists"                       test -f "$ROOT/SECURITY.md"
+  check "security/SECURITY.md links to root policy" \
+        bash "$ROOT/scripts/check-security-md.sh"
   check ".github/ISSUE_TEMPLATE/feature_request.md exists" \
         test -f "$ROOT/.github/ISSUE_TEMPLATE/feature_request.md"
 
