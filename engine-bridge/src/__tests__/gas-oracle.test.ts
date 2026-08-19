@@ -40,5 +40,47 @@ describe("GasOracle", () => {
     const go = new GasOracle();
     await expect(go.resolveFee(rpc, { multiplier: 1.2 })).rejects.toThrow("network down");
   });
+
+  it("honors a longer caller-supplied cache TTL", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+
+    const rpc = makeRpc(100);
+    let calls = 0;
+    const call = rpc.call.bind(rpc);
+    rpc.call = async (fn: any) => {
+      calls += 1;
+      return call(fn);
+    };
+
+    const go = new GasOracle();
+    await go.resolveFee(rpc, { multiplier: 1.2, cacheTtlMs: 60_000 });
+    jest.advanceTimersByTime(6_000);
+    await go.resolveFee(rpc, { multiplier: 1.2, cacheTtlMs: 60_000 });
+
+    expect(calls).toBe(1);
+    jest.useRealTimers();
+  });
+
+  it("expires the cache after the caller-supplied TTL", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+
+    const rpc = makeRpc(100);
+    let calls = 0;
+    const call = rpc.call.bind(rpc);
+    rpc.call = async (fn: any) => {
+      calls += 1;
+      return call(fn);
+    };
+
+    const go = new GasOracle();
+    await go.resolveFee(rpc, { multiplier: 1.2, cacheTtlMs: 100 });
+    jest.advanceTimersByTime(200);
+    await go.resolveFee(rpc, { multiplier: 1.2, cacheTtlMs: 100 });
+
+    expect(calls).toBe(2);
+    jest.useRealTimers();
+  });
 });
 
