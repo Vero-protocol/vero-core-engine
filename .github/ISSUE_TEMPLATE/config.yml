@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Vero-protocol/vero-core-engine/blob/main/SECURITY.md
+    about: Please refer to SECURITY.md for instructions on reporting vulnerabilities instead of opening a public issue.
