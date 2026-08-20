@@ -114,6 +114,7 @@ export class EventPropagator {
       const enqueued = this.queue.enqueue(event);
       if (!enqueued) {
         logger.warn("[EventPropagator] Failed to enqueue event:", { eventId: event.id });
+        break;
       }
 
       // Update cursor after successful enqueue (not after handler processing)
