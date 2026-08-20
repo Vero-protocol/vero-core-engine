@@ -19,7 +19,9 @@ Thank you for contributing to protocol-grade infrastructure. This guide defines 
 
 ## Code of Conduct
 
-All contributors must adhere to the [Contributor Covenant](CODE_OF_CONDUCT.md). Violations result in immediate removal.
+All contributors must adhere to the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). Violations result in immediate removal.
+
+Report unacceptable behavior by [opening an issue](https://github.com/Vero-protocol/vero-core-engine/issues) on this repository.
 
 ---
 

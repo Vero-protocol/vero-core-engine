@@ -126,6 +126,7 @@ vero-core-engine/
 │   │   └── feature_request.md
 │   └── workflows/          # CI/CD (add as needed)
 ├── SECURITY.md
+├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
 ├── DEVELOPMENT_ROADMAP.md
 ├── BUILD_ENGINE.sh         # One-shot scaffold + build + health-check
@@ -298,6 +299,12 @@ See [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) for the full milestone trac
 ## Security
 
 See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy, incident response playbooks, and safe-harbor commitment.
+
+---
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Reports of unacceptable behavior can be filed by [opening an issue](https://github.com/Vero-protocol/vero-core-engine/issues) on this repository.
 
 ---
 
