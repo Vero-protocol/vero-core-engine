@@ -16,15 +16,21 @@ export interface CsvColumn<T> {
   ) => string | number | boolean;
 }
 
-/** RFC 4180 §2 field escape. Quoting only when required keeps the output tidy. */
+/**
+ * Escape an RFC 4180 field and neutralize spreadsheet formula prefixes.
+ * Quoting alone does not prevent Excel or Sheets from evaluating formulas.
+ */
 export function escapeCsvField(value: unknown): string {
   if (value === null || value === undefined) return "";
-  const str = typeof value === "string" ? value : String(value);
+  const raw = typeof value === "string" ? value : String(value);
+  const str = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
   if (/[",\r\n]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
-}/** Build a CRLF-delimited CSV string from `rows` using the supplied columns. */
+}
+
+/** Build a CRLF-delimited CSV string from `rows` using the supplied columns. */
 export function toCsv<T>(
   rows: readonly T[],
   columns: readonly CsvColumn<T>[]

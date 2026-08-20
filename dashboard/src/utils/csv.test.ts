@@ -29,6 +29,19 @@ describe("escapeCsvField", () => {
     expect(escapeCsvField("line1\r\nline2")).toBe('"line1\r\nline2"');
   });
 
+  it.each([
+    ["=SUM(A1:A2)", "'=SUM(A1:A2)"],
+    ["+SUM(A1:A2)", "'+SUM(A1:A2)"],
+    ["-2+3", "'-2+3"],
+    ["@SUM(A1:A2)", "'@SUM(A1:A2)"],
+  ])("neutralizes a dangerous leading character in %s", (value, expected) => {
+    expect(escapeCsvField(value)).toBe(expected);
+  });
+
+  it("neutralizes formula prefixes before CSV quoting", () => {
+    expect(escapeCsvField("=SUM(A1,A2)")).toBe('"\'=SUM(A1,A2)"');
+  });
+
   it("coerces non-strings without quoting unless needed", () => {
     expect(escapeCsvField(42)).toBe("42");
     expect(escapeCsvField(true)).toBe("true");
