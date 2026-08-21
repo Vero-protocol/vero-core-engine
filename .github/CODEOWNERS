@@ -1,0 +1,79 @@
+# CODEOWNERS — vero-core-engine
+# Default reviewers for all files
+* @N-thnI @N-i-xx
+
+# ──────────────────────────────────────────────
+# Engine Core — security-sensitive paths
+# ──────────────────────────────────────────────
+
+# Treasury & protocol fee logic
+/engine-core/src/treasury.rs @N-thnI @N-i-xx
+/engine-core/src/treasury_tests.rs @N-thnI @N-i-xx
+/engine-core/src/protocol_fee.rs @N-thnI @N-i-xx
+
+# Governance & access control
+/engine-core/src/governance.rs @N-thnI @N-i-xx
+/engine-core/src/governance_tests.rs @N-thnI @N-i-xx
+/engine-core/src/core/access.rs @N-thnI @N-i-xx
+/engine-core/src/guards.rs @N-thnI @N-i-xx
+/engine-core/src/core/guards.rs @N-thnI @N-i-xx
+
+# Control plane & state management
+/engine-core/src/core/control_plane.rs @N-thnI @N-i-xx
+/engine-core/src/core/state.rs @N-thnI @N-i-xx
+/engine-core/src/core/proxy.rs @N-thnI @N-i-xx
+
+# Emergency recovery & circuit breaker
+/engine-core/src/emergency_recovery.rs @N-thnI @N-i-xx
+/engine-core/src/circuit_breaker.rs @N-thnI @N-i-xx
+
+# Upgrade logic
+/engine-core/src/upgrade.rs @N-thnI @N-i-xx
+
+# Audit & burn
+/engine-core/src/audit.rs @N-thnI @N-i-xx
+/engine-core/src/burn.rs @N-thnI @N-i-xx
+
+# ZK hooks
+/engine-core/src/core/zk_hooks.rs @N-thnI @N-i-xx
+
+# Engine Core — general
+/engine-core/ @N-thnI @N-i-xx
+
+# ──────────────────────────────────────────────
+# Engine Bridge — RPC / nonce / relay paths
+# ──────────────────────────────────────────────
+
+/engine-bridge/src/rpc-client.ts @N-thnI @N-i-xx
+/engine-bridge/src/nonce-manager.ts @N-thnI @N-i-xx
+/engine-bridge/src/tx-sender.ts @N-thnI @N-i-xx
+/engine-bridge/src/wallet-connector.ts @N-thnI @N-i-xx
+/engine-bridge/src/relayer-auth.ts @N-thnI @N-i-xx
+/engine-bridge/src/gas-oracle.ts @N-thnI @N-i-xx
+
+# Engine Bridge — general
+/engine-bridge/ @N-thnI @N-i-xx
+
+# ──────────────────────────────────────────────
+# Other top-level modules
+# ──────────────────────────────────────────────
+
+/src/audit-guard/ @N-thnI @N-i-xx
+/dashboard/ @N-thnI @N-i-xx
+/security/ @N-thnI @N-i-xx
+/scripts/ @N-thnI @N-i-xx
+
+# ──────────────────────────────────────────────
+# CI / GitHub config
+# ──────────────────────────────────────────────
+
+/.github/ @N-thnI @N-i-xx
+
+# ──────────────────────────────────────────────
+# Root-level project files
+# ──────────────────────────────────────────────
+
+/Cargo.toml @N-thnI @N-i-xx
+/SECURITY.md @N-thnI @N-i-xx
+/CONTRIBUTING.md @N-thnI @N-i-xx
+/ARCHITECTURE.md @N-thnI @N-i-xx
