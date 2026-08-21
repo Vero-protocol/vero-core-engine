@@ -33,6 +33,27 @@ export interface QueuedEvent {
   nextAttempt?: number;
 }
 
+export interface QueueStats {
+  total: number;
+  pending: number;
+  processing: number;
+  /** Failed events that still have retries remaining — not healthy in-flight work. */
+  retrying: number;
+  processed: number;
+  failed: number;
+  oldestEventAge: number | null;
+}
+
+const EMPTY_STATS: QueueStats = {
+  total: 0,
+  pending: 0,
+  processing: 0,
+  retrying: 0,
+  processed: 0,
+  failed: 0,
+  oldestEventAge: null,
+};
+
 export class EventQueue {
   private db: Database.Database;
   private readonly dbPath: string;
@@ -239,15 +260,12 @@ export class EventQueue {
 
   /**
    * Get queue statistics (size, oldest event, error rate).
+   *
+   * Failed events that still have retries remaining are reported as
+   * `retrying`, not `processing`, so an outage-driven retry backlog is
+   * visible instead of looking like healthy in-flight work.
    */
-  getStats(): {
-    total: number;
-    pending: number;
-    processing: number;
-    processed: number;
-    failed: number;
-    oldestEventAge: number | null;
-  } {
+  getStats(): QueueStats {
     try {
       const allStmt = this.db.prepare("SELECT status, attempts FROM events");
       const rows = allStmt.all() as any[];
@@ -256,6 +274,7 @@ export class EventQueue {
         total: rows.length,
         pending: 0,
         processing: 0,
+        retrying: 0,
         processed: 0,
         failed: 0,
       };
@@ -269,7 +288,7 @@ export class EventQueue {
           stats.processing++;
         } else if (row.status === "failed") {
           if (row.attempts < this.maxRetries) {
-            stats.processing++;
+            stats.retrying++;
           } else {
             stats.failed++;
           }
@@ -286,14 +305,7 @@ export class EventQueue {
       };
     } catch (err) {
       logger.error("[EventQueue] Get stats failed:", err);
-      return {
-        total: 0,
-        pending: 0,
-        processing: 0,
-        processed: 0,
-        failed: 0,
-        oldestEventAge: null,
-      };
+      return { ...EMPTY_STATS };
     }
   }
 

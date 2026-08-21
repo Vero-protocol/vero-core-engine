@@ -218,7 +218,8 @@ const stats = queue.getStats();
 //   total: 42,           // Total events in queue
 //   pending: 10,         // Awaiting processing
 //   processing: 2,       // Currently being handled
-//   processed: 30,       // Successfully handled
+//   retrying: 3,         // Failed with retries remaining
+//   processed: 27,       // Successfully handled
 //   failed: 0,           // Exhausted retries
 //   oldestEventAge: 1500 // ms since oldest event enqueued
 // }
@@ -320,6 +321,7 @@ const stats = propagator.getQueueStats();
 
 const isHealthy =
   stats.processing <= 1 &&         // Not backed up
+  stats.retrying === 0 &&          // No retry backlog
   stats.failed === 0 &&            // No exhausted retries
   stats.oldestEventAge < 60_000;   // No old events (< 60s)
 

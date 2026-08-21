@@ -8,7 +8,7 @@
  */
 
 import { RpcClient } from "./rpc-client";
-import { EventQueue } from "./event-queue";
+import { EventQueue, type QueueStats } from "./event-queue";
 import { logger } from "./logger";
 
 export interface EngineEvent {
@@ -153,8 +153,8 @@ export class EventPropagator {
     }
   }
 
-  /** Get queue statistics. */
-  getQueueStats() {
+  /** Get queue statistics, including the retrying backlog. */
+  getQueueStats(): QueueStats {
     return this.queue.getStats();
   }
 

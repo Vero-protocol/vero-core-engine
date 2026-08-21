@@ -257,8 +257,37 @@ describe("EventQueue", () => {
       expect(stats.total).toBe(5);
       expect(stats.processed).toBe(1);
       expect(stats.pending).toBe(3);
-      expect(stats.processing).toBe(1); // evt-2 is still in processing state
-      expect(stats.failed).toBe(0); // evt-2 was retried as pending, not failed
+      expect(stats.processing).toBe(0);
+      expect(stats.retrying).toBe(1); // evt-2 failed with retries remaining
+      expect(stats.failed).toBe(0);
+
+      cleanupTestQueue(queue, path);
+    });
+
+    it("separates retrying failures from processing and exhausted failed events", () => {
+      const { queue, path } = createTestQueue();
+
+      queue.enqueue(createTestEvent("evt-exhausted", "test"));
+      for (let i = 0; i < 3; i++) {
+        expect(queue.dequeue()).not.toBeNull();
+        queue.markFailed("evt-exhausted", new Error(`attempt ${i + 1}`));
+      }
+
+      queue.enqueue(createTestEvent("evt-processing", "test"));
+      expect(queue.dequeue()!.id).toBe("evt-processing");
+
+      queue.enqueue(createTestEvent("evt-retrying", "test"));
+      expect(queue.dequeue()!.id).toBe("evt-retrying");
+      queue.markFailed("evt-retrying", new Error("transient"));
+
+      const stats = queue.getStats();
+
+      expect(stats.total).toBe(3);
+      expect(stats.processing).toBe(1);
+      expect(stats.retrying).toBe(1);
+      expect(stats.failed).toBe(1);
+      expect(stats.pending).toBe(0);
+      expect(stats.processed).toBe(0);
 
       cleanupTestQueue(queue, path);
     });
