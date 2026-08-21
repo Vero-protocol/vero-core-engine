@@ -7,10 +7,11 @@ use crate::event_struct::{ACT_REQUEST, ACT_SNAPSHOT, ACT_TRIGGERED, MOD_TREASURY
 use crate::event_utils::{publish_event, zero_hash};
 use crate::types::{TreasurySnapshot, TriggerKind};
 use soroban_sdk::{
-    contracterror, contracttype, panic_with_error, symbol_short, Bytes, BytesN, Env, Map, Symbol,
-    Val, Vec,
+    contracterror, contracttype, panic_with_error, symbol_short, Address, Bytes, BytesN, Env, Map,
+    Symbol, Val, Vec,
 };
 
+const KEY_ADMIN: Symbol = symbol_short!("TR_ADMIN");
 const KEY_SNAP_COUNTER: Symbol = symbol_short!("SNAPC");
 const KEY_SNAP_LATEST: Symbol = symbol_short!("SNAPL");
 const KEY_OUTFLOWS: Symbol = symbol_short!("OUTFLOWS");
@@ -45,6 +46,9 @@ pub enum TreasuryError {
     TimelockActive = 7,
     DuplicateOutflow = 8,
     ArithmeticOverflow = 9,
+    Unauthorized = 10,
+    NotInitialized = 11,
+    AlreadyInitialized = 12,
 }
 
 #[contracttype]
@@ -57,7 +61,11 @@ pub struct TimelockedOutflow {
     pub executed: bool,
 }
 
-pub fn init(env: &Env) {
+pub fn init(env: &Env, admin: Address) {
+    if env.storage().instance().has(&KEY_ADMIN) {
+        panic_with_error!(env, TreasuryError::AlreadyInitialized);
+    }
+    env.storage().instance().set(&KEY_ADMIN, &admin);
     env.storage().instance().set(&KEY_SNAP_COUNTER, &0u64);
     env.storage().instance().set(&KEY_SNAP_LATEST, &0u64);
     env.storage()
@@ -65,11 +73,28 @@ pub fn init(env: &Env) {
         .set(&KEY_OUTFLOWS, &Map::<u64, TimelockedOutflow>::new(env));
 }
 
+fn require_admin(env: &Env, caller: &Address) {
+    caller.require_auth();
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&KEY_ADMIN)
+        .unwrap_or_else(|| panic_with_error!(env, TreasuryError::NotInitialized));
+    if caller != &admin {
+        panic_with_error!(env, TreasuryError::Unauthorized);
+    }
+}
+
 /// Queue a treasury outflow behind the mandatory 24-hour delay.
-pub fn schedule_outflow(env: &Env, outflow_id: u64, amount: i128) -> u64 {
+///
+/// Authorization is enforced in this module, not only at a future ControlPlane
+/// wrapper (see issue #178). Wrappers must forward `caller`; they cannot omit
+/// the check because `require_admin` lives here.
+pub fn schedule_outflow(env: &Env, caller: &Address, outflow_id: u64, amount: i128) -> u64 {
     crate::non_reentrant!(env);
 
     assert_closed(env);
+    require_admin(env, caller);
 
     if amount <= 0 {
         panic_with_error!(env, TreasuryError::InvalidOutflowAmount);
@@ -99,10 +124,15 @@ pub fn schedule_outflow(env: &Env, outflow_id: u64, amount: i128) -> u64 {
 }
 
 /// Mark an outflow executable only after its 24-hour time-lock has expired.
-pub fn execute_outflow(env: &Env, outflow_id: u64) -> TimelockedOutflow {
+///
+/// Authorization is enforced in this module, not only at a future ControlPlane
+/// wrapper (see issue #178). Wrappers must forward `caller`; they cannot omit
+/// the check because `require_admin` lives here.
+pub fn execute_outflow(env: &Env, caller: &Address, outflow_id: u64) -> TimelockedOutflow {
     crate::non_reentrant!(env);
 
     assert_closed(env);
+    require_admin(env, caller);
 
     let mut outflows = load_outflows(env);
     let mut outflow = outflows
@@ -134,12 +164,14 @@ pub fn get_outflow(env: &Env, outflow_id: u64) -> Option<TimelockedOutflow> {
 }
 
 
-/// Record a treasury snapshot and return its ID.
-
 /// Record a treasury snapshot and return its monotonic snapshot id.
-
+///
+/// Authorization is enforced in this module, not only at a future ControlPlane
+/// wrapper (see issue #178). Wrappers must forward `caller`; they cannot omit
+/// the check because `require_admin` lives here.
 pub fn record_snapshot(
     env: &Env,
+    caller: &Address,
     total_balance: i128,
     account_count: u32,
     trigger: TriggerKind,
@@ -148,6 +180,7 @@ pub fn record_snapshot(
     crate::non_reentrant!(env);
 
     assert_closed(env);
+    require_admin(env, caller);
 
     if total_balance < 0 {
         panic_with_error!(env, TreasuryError::InvalidBalance);
@@ -278,7 +311,11 @@ fn make_snap_key(id: u64) -> TreasuryKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{contract, contractimpl, testutils::Ledger as _, Env, Map, Symbol};
+    use soroban_sdk::{
+        contract, contractimpl,
+        testutils::{Address as _, Ledger as _},
+        Env, Map, Symbol,
+    };
 
     #[contract]
     pub struct TestContract;
@@ -286,71 +323,149 @@ mod tests {
     #[contractimpl]
     impl TestContract {}
 
-    fn with_treasury_env(run: impl FnOnce(&Env)) {
+    fn setup() -> (Env, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TestContract);
+        let admin = Address::generate(&env);
+        env.as_contract(&contract_id, || init(&env, admin.clone()));
+        (env, contract_id, admin)
+    }
+
+    fn setup_without_auth_mock() -> (Env, Address, Address) {
         let env = Env::default();
         let contract_id = env.register_contract(None, TestContract);
-        env.as_contract(&contract_id, || {
-            init(&env);
-            run(&env);
-        });
+        let admin = Address::generate(&env);
+        env.as_contract(&contract_id, || init(&env, admin.clone()));
+        (env, contract_id, admin)
     }
 
     #[test]
     fn snapshot_creation_and_retrieval() {
-        with_treasury_env(|env| {
-            let ctx: Map<Symbol, Val> = Map::new(env);
-            let id = record_snapshot(env, 1000, 5, TriggerKind::Deposit, ctx);
+        let (env, contract_id, admin) = setup();
+        env.as_contract(&contract_id, || {
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            let id = record_snapshot(&env, &admin, 1000, 5, TriggerKind::Deposit, ctx);
             assert_eq!(id, 1);
-            let snap = get_snapshot(env, 1).unwrap();
+            let snap = get_snapshot(&env, 1).unwrap();
             assert_eq!(snap.total_balance, 1000);
-            assert_eq!(snapshot_count(env), 1);
+            assert_eq!(snapshot_count(&env), 1);
         });
     }
 
     #[test]
     fn snapshot_hash_verification() {
-        with_treasury_env(|env| {
-            let ctx: Map<Symbol, Val> = Map::new(env);
-            record_snapshot(env, 500, 2, TriggerKind::Withdrawal, ctx);
-            let snap = get_snapshot(env, 1).unwrap();
-            assert!(verify_snapshot(env, &snap));
+        let (env, contract_id, admin) = setup();
+        env.as_contract(&contract_id, || {
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            record_snapshot(&env, &admin, 500, 2, TriggerKind::Withdrawal, ctx);
+            let snap = get_snapshot(&env, 1).unwrap();
+            assert!(verify_snapshot(&env, &snap));
         });
     }
 
     #[test]
-fn latest_snapshot_is_none_when_empty() {
-    with_treasury_env(|env| {
-        assert!(get_latest_snapshot(env).is_none());
-        assert_eq!(snapshot_count(env), 0);
-    });
-}
+    fn latest_snapshot_is_none_when_empty() {
+        let (env, contract_id, _admin) = setup();
+        env.as_contract(&contract_id, || {
+            assert!(get_latest_snapshot(&env).is_none());
+            assert_eq!(snapshot_count(&env), 0);
+        });
+    }
 
     #[test]
     #[should_panic]
     fn negative_balance_rejected() {
-        with_treasury_env(|env| {
-            let ctx: Map<Symbol, Val> = Map::new(env);
-            record_snapshot(env, -1, 0, TriggerKind::Other, ctx);
+        let (env, contract_id, admin) = setup();
+        env.as_contract(&contract_id, || {
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            record_snapshot(&env, &admin, -1, 0, TriggerKind::Other, ctx);
         });
     }
 
     #[test]
     #[should_panic]
     fn withdrawal_blocked_before_time_lock_expires() {
-        with_treasury_env(|env| {
-            schedule_outflow(env, 7, 1_000);
-            execute_outflow(env, 7);
+        let (env, contract_id, admin) = setup();
+        env.as_contract(&contract_id, || {
+            schedule_outflow(&env, &admin, 7, 1_000);
+        });
+        env.as_contract(&contract_id, || {
+            execute_outflow(&env, &admin, 7);
         });
     }
 
     #[test]
     fn withdrawal_executes_after_time_lock_expires() {
-        with_treasury_env(|env| {
-            let unlock_at = schedule_outflow(env, 7, 1_000);
-            env.ledger().set_timestamp(unlock_at);
-            let outflow = execute_outflow(env, 7);
+        let (env, contract_id, admin) = setup();
+        let unlock_at = env.as_contract(&contract_id, || schedule_outflow(&env, &admin, 7, 1_000));
+        env.ledger().set_timestamp(unlock_at);
+        env.as_contract(&contract_id, || {
+            let outflow = execute_outflow(&env, &admin, 7);
             assert!(outflow.executed);
             assert_eq!(outflow.executable_at, unlock_at);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn schedule_outflow_rejects_unauthorized_caller() {
+        let (env, contract_id, _admin) = setup();
+        let rogue = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            schedule_outflow(&env, &rogue, 1, 1_000);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn execute_outflow_rejects_unauthorized_caller() {
+        let (env, contract_id, admin) = setup();
+        env.as_contract(&contract_id, || {
+            schedule_outflow(&env, &admin, 1, 1_000);
+        });
+        let rogue = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            execute_outflow(&env, &rogue, 1);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn record_snapshot_rejects_unauthorized_caller() {
+        let (env, contract_id, _admin) = setup();
+        let rogue = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            record_snapshot(&env, &rogue, 1000, 1, TriggerKind::Manual, ctx);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn schedule_outflow_rejects_unauthenticated_caller() {
+        let (env, contract_id, admin) = setup_without_auth_mock();
+        env.as_contract(&contract_id, || {
+            schedule_outflow(&env, &admin, 1, 1_000);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn execute_outflow_rejects_unauthenticated_caller() {
+        let (env, contract_id, admin) = setup_without_auth_mock();
+        env.as_contract(&contract_id, || {
+            execute_outflow(&env, &admin, 1);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn record_snapshot_rejects_unauthenticated_caller() {
+        let (env, contract_id, admin) = setup_without_auth_mock();
+        env.as_contract(&contract_id, || {
+            let ctx: Map<Symbol, Val> = Map::new(&env);
+            record_snapshot(&env, &admin, 1000, 1, TriggerKind::Manual, ctx);
         });
     }
 }
