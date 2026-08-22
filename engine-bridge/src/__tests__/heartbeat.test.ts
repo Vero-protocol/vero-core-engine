@@ -72,6 +72,26 @@ describe("HeartbeatMonitor", () => {
     propagator.stop();
   });
 
+  it("surfaces retrying queue stats separately from processing", async () => {
+    rpc.call = jest.fn().mockResolvedValue({});
+
+    monitor.start();
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const pulse = logSpy.mock.calls.find(
+      (call) => typeof call[1] === "string" && call[1].includes("eventQueue")
+    );
+    expect(pulse).toBeDefined();
+    const report = JSON.parse(pulse![1] as string);
+    expect(report.eventQueue).toEqual(
+      expect.objectContaining({
+        processing: 0,
+        retrying: 0,
+        failed: 0,
+      })
+    );
+  });
+
   it("logs at intervals", async () => {
     rpc.call = jest.fn().mockResolvedValue({});
 

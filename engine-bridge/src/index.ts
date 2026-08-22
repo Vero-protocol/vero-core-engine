@@ -1,3 +1,5 @@
+export { EventQueue } from "./event-queue";
+export type { QueuedEvent, QueueStats } from "./event-queue";
 export { RpcClient } from "./rpc-client";
 export { NonceManager } from "./nonce-manager";
 export { EventPropagator } from "./event-propagator";

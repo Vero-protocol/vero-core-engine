@@ -200,7 +200,9 @@ stmt.run(event.id, JSON.stringify(event), "pending", 0, Date.now());
 **Verification**:
 - Test: `reports accurate queue statistics` ✅
   - Enqueue 5 events in different states
-  - Verify stats: total=5, pending=3, processing=1, processed=1
+  - Verify stats: total=5, pending=3, retrying=1, processed=1, processing=0
+
+- Test: `separates retrying failures from processing and exhausted failed events` ✅
 
 - Test: `calculates oldest event age` ✅
   - Enqueue event
@@ -219,8 +221,9 @@ return {
   total: sum of all counts,
   pending: WHERE status = 'pending',
   processing: WHERE status = 'processing',
+  retrying: WHERE status = 'failed' AND attempts < maxRetries,
   processed: WHERE status = 'processed',
-  failed: WHERE status = 'failed',
+  failed: WHERE status = 'failed' AND attempts >= maxRetries,
   oldestEventAge: Date.now() - earliest enqueueTime
 };
 ```
@@ -353,6 +356,7 @@ EventQueue
     ✓ does not recover processed events
   Queue Statistics
     ✓ reports accurate queue statistics
+    ✓ separates retrying failures from processing and exhausted failed events
     ✓ calculates oldest event age
   Cleanup
     ✓ removes old processed events

@@ -71,6 +71,7 @@ export class HeartbeatMonitor {
         running: this.propagator.isRunning(),
         cursor:  this.propagator.getCursor() ?? "none",
       },
+      eventQueue: this.propagator.getQueueStats(),
       system: {
         memoryRssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
         uptimeSec:   Math.round(process.uptime()),
