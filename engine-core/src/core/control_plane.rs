@@ -45,6 +45,7 @@ const RESERVED_KEYS: &[Symbol] = &[
     symbol_short!("SNAPC"),
     symbol_short!("SNAPL"),
     symbol_short!("OUTFLOWS"),
+    symbol_short!("TR_ADMIN"),
     symbol_short!("VERSION"),
     symbol_short!("VER_INIT"),
     symbol_short!("ZK_COUNT"),
@@ -191,6 +192,12 @@ impl ControlPlane {
     }
 
     /// Store a governance proposal via the shared governance module.
+    ///
+    /// Governance already authenticates internally. Treasury mutations
+    /// (`schedule_outflow`, `execute_outflow`, `record_snapshot`) likewise
+    /// require an authenticated admin inside `crate::treasury`, so a future
+    /// ControlPlane wrapper for issue #178 must forward `caller` and cannot
+    /// bypass that check by omitting it at this layer.
     pub fn propose(env: Env, proposal: Proposal) -> u64 {
         crate::governance::propose(&env, proposal)
     }

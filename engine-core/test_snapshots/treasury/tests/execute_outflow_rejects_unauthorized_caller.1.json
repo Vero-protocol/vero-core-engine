@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 2,
+    "address": 3,
     "nonce": 0
   },
   "auth": [
@@ -62,7 +62,7 @@
                           "map": [
                             {
                               "key": {
-                                "u64": 7
+                                "u64": 1
                               },
                               "val": {
                                 "map": [
@@ -98,7 +98,7 @@
                                       "symbol": "id"
                                     },
                                     "val": {
-                                      "u64": 7
+                                      "u64": 1
                                     }
                                   },
                                   {
@@ -185,7 +185,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": {
               "ledger_key_nonce": {
                 "nonce": 5541220902715666415
@@ -200,7 +200,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": 5541220902715666415
@@ -277,7 +277,7 @@
                     "symbol": "value"
                   },
                   "val": {
-                    "u64": 7
+                    "u64": 1
                   }
                 }
               ]
@@ -300,7 +300,7 @@
               },
               {
                 "error": {
-                  "contract": 7
+                  "contract": 10
                 }
               }
             ],
@@ -310,7 +310,7 @@
                   "string": "failing with contract error"
                 },
                 {
-                  "u32": 7
+                  "u32": 10
                 }
               ]
             }
@@ -332,7 +332,7 @@
               },
               {
                 "error": {
-                  "contract": 7
+                  "contract": 10
                 }
               }
             ],
