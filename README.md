@@ -3,7 +3,7 @@
 > **Protocol-grade integration layer for the Stellar / Vero ecosystem.**
 > ZK-ready · Audit-first · Circuit-protected · Multi-sig governed
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Stellar](https://img.shields.io/badge/Network-Stellar-7B61FF)](https://stellar.org)
 [![Status](https://img.shields.io/badge/Status-Active_Development-orange)](DEVELOPMENT_ROADMAP.md)
 
@@ -310,4 +310,4 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
