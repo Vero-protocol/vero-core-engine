@@ -378,3 +378,32 @@ fn test_proxy_upgrade_rejects_non_admin() {
     let result = client.try_upgrade(&new_wasm_hash);
     assert!(result.is_err());
 }
+
+/// `update_param` must refuse the RBAC storage slots owned by `core::access`.
+///
+/// `RESERVED_KEYS` previously omitted them, so an admin could write `C_ADMIN`
+/// — replacing an `Address` with a `u64`. Every later `require_role` then fails
+/// host conversion, and `access::initialize` refuses to re-run because
+/// `C_INIT` is still set, leaving no way to restore the role layer.
+#[test]
+fn test_update_param_rejects_rbac_storage_keys() {
+    let env = Env::default();
+    let (client, admin, _) = initialized_client(&env);
+
+    for key in [
+        symbol_short!("C_ADMIN"),
+        symbol_short!("C_INIT"),
+        symbol_short!("C_OPERS"),
+        symbol_short!("C_AUDIT"),
+        symbol_short!("GAP"),
+    ] {
+        let payload = BytesN::from_array(&env, &[7u8; 32]);
+        let commitment = commitment(&env, &admin, 1, &payload);
+        let result = client.try_update_param(&admin, &key, &1u64, &commitment, &payload);
+        assert!(
+            result.is_err(),
+            "update_param must reject reserved RBAC key {:?}",
+            key
+        );
+    }
+}

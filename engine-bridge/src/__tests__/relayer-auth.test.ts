@@ -159,9 +159,17 @@ describe("ZkStateSyncer with auth", () => {
     ws.close();
   });
 
-  it("works without auth when no auth config is provided", async () => {
+  it("accepts any client when unauthenticated mode is explicitly opted into", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     prop = makePropagator();
-    syncer = new ZkStateSyncer(prop, { port: 0, pingIntervalMs: 60_000 });
+    // Previously this passed no auth options at all and the server silently
+    // came up wide open. That is now an explicit opt-in.
+    syncer = new ZkStateSyncer(prop, {
+      port: 0,
+      pingIntervalMs: 60_000,
+      allowUnauthenticated: true,
+    });
+    warn.mockRestore();
     await syncer.ready;
 
     const ws = await new Promise<WebSocket>((resolve, reject) => {

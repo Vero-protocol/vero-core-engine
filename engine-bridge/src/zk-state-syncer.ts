@@ -14,7 +14,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 import type { EventPropagator, EngineEvent } from "./event-propagator";
 import { RelayerAuth } from "./relayer-auth";
 import type { RelayerAuthOptions } from "./relayer-auth";
-import { WalletConnector } from "./wallet-connector";
+import { WalletConnector, type AccountLoader } from "./wallet-connector";
 
 export interface ZkStateSnapshot {
   type:       "zk_state_update";
@@ -41,6 +41,22 @@ export interface ZkStateSyncerOptions {
   serverSigningKey?: string;
   networkPassphrase?: string;
   domain?: string;
+  /**
+   * Loads a client account's real signer configuration for SEP-10
+   * verification. Required whenever `serverSigningKey` is set — without it,
+   * verification cannot check signer weights or the account threshold.
+   */
+  loadAccount?: AccountLoader;
+  /**
+   * Explicitly run without authentication.
+   *
+   * Required when neither `auth` nor `serverSigningKey` is supplied. Both are
+   * optional, so omitting them used to silently produce a server that accepted
+   * every connection and broadcast all ZK state commitments to it — with the
+   * whole RelayerAuth layer unreachable. Making that an explicit opt-in means a
+   * misconfigured deployment fails at startup instead of running wide open.
+   */
+  allowUnauthenticated?: boolean;
 }
 
 const DEFAULT_ZK_TOPIC     = "state_commitment";
@@ -62,6 +78,24 @@ export class ZkStateSyncer {
   ) {
     this.options = options;
     this.zkTopic = options.zkTopic ?? DEFAULT_ZK_TOPIC;
+
+    // Fail closed. `auth` gates who may connect; `serverSigningKey` gates who
+    // receives broadcasts. With neither, every socket connects and receives
+    // everything, and RelayerAuth never runs at all.
+    if (!options.auth && !options.serverSigningKey && !options.allowUnauthenticated) {
+      throw new Error(
+        "ZkStateSyncer: refusing to start without authentication. " +
+          "Supply `auth` and/or `serverSigningKey`, or set `allowUnauthenticated: true` " +
+          "to run open deliberately (local development only).",
+      );
+    }
+
+    if (options.allowUnauthenticated && !options.auth && !options.serverSigningKey) {
+      console.warn(
+        "[ZkStateSyncer] WARNING: running without authentication. Every connecting " +
+          "client will receive all ZK state commitments.",
+      );
+    }
 
     this.wss = new WebSocketServer({
       port: options.port,
@@ -144,17 +178,28 @@ export class ZkStateSyncer {
     }
   }
 
-  private handleAuthSubmit(ws: WebSocket, xdr: string): void {
-    const { serverSigningKey, networkPassphrase, domain } = this.options;
+  private async handleAuthSubmit(ws: WebSocket, xdr: string): Promise<void> {
+    const { serverSigningKey, networkPassphrase, domain, loadAccount } = this.options;
     if (!serverSigningKey || !networkPassphrase || !domain) return;
+
+    if (!loadAccount) {
+      // Verification needs the account's real signer set. Without a loader we
+      // cannot check weights or thresholds, so refuse rather than fall back to
+      // assuming a single master key at weight 1.
+      ws.send(
+        JSON.stringify({ type: "auth_error", message: "Account loader not configured on server" }),
+      );
+      return;
+    }
 
     try {
       const serverKeypair = Keypair.fromSecret(serverSigningKey);
-      const address = WalletConnector.verifyResponse(
+      const address = await WalletConnector.verifyResponse(
         xdr,
         serverKeypair.publicKey(),
         networkPassphrase,
-        domain
+        domain,
+        loadAccount,
       );
 
       const client = this.clients.get(ws);

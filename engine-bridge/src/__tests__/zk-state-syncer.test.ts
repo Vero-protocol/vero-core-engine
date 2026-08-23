@@ -35,13 +35,23 @@ async function connectClient(port: number): Promise<WebSocket> {
 
 // ── ZkStateSyncer ─────────────────────────────────────────────────────────────
 
+// These suites deliberately run the syncer unauthenticated, which now emits a
+// warning by design. Silence it so it doesn't read as an unexpected log.
+let warnSpy: jest.SpyInstance;
+beforeAll(() => {
+  warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+});
+afterAll(() => {
+  warnSpy.mockRestore();
+});
+
 describe("ZkStateSyncer", () => {
   let syncer: ZkStateSyncer;
   let prop:   ReturnType<typeof makePropagator>;
 
   beforeEach(async () => {
     prop   = makePropagator();
-    syncer = new ZkStateSyncer(prop, { port: 0, pingIntervalMs: 60_000 });
+    syncer = new ZkStateSyncer(prop, { port: 0, pingIntervalMs: 60_000, allowUnauthenticated: true });
     await syncer.ready;
   });
 
@@ -120,7 +130,7 @@ describe("ZkStateSyncer", () => {
   it("respects a custom zkTopic filter", async () => {
     await syncer.close();
     prop    = makePropagator();
-    syncer  = new ZkStateSyncer(prop, { port: 0, zkTopic: "breaker_open", pingIntervalMs: 60_000 });
+    syncer  = new ZkStateSyncer(prop, { port: 0, zkTopic: "breaker_open", pingIntervalMs: 60_000, allowUnauthenticated: true });
     await syncer.ready;
 
     const ws  = await connectClient(syncer.getPort());
@@ -150,5 +160,54 @@ describe("ZkStateSyncer", () => {
     });
 
     ws.close();
+  });
+});
+
+describe("ZkStateSyncer authentication guard", () => {
+  const prop = { onEvent: () => {} };
+
+  // main.ts constructed the syncer as `new ZkStateSyncer(propagator, { port })`.
+  // Both auth options are optional, so verifyClient was never installed and the
+  // broadcast guard short-circuited: every socket connected and received all ZK
+  // state commitments, with RelayerAuth unreachable in production.
+  it("refuses to start with no authentication configured", () => {
+    expect(() => new ZkStateSyncer(prop, { port: 0 })).toThrow(
+      /refusing to start without authentication/i,
+    );
+  });
+
+  it("starts when auth is configured", async () => {
+    const s = new ZkStateSyncer(prop, {
+      port: 0,
+      pingIntervalMs: 60_000,
+      auth: { apiKeys: ["test-key"] },
+    });
+    await s.ready;
+    await s.close();
+  });
+
+  it("starts when a server signing key is configured", async () => {
+    const s = new ZkStateSyncer(prop, {
+      port: 0,
+      pingIntervalMs: 60_000,
+      serverSigningKey: "SIGNING_KEY",
+    });
+    await s.ready;
+    await s.close();
+  });
+
+  it("starts unauthenticated only when explicitly opted in, and warns", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const s = new ZkStateSyncer(prop, {
+      port: 0,
+      pingIntervalMs: 60_000,
+      allowUnauthenticated: true,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("running without authentication"),
+    );
+    warn.mockRestore();
+    await s.ready;
+    await s.close();
   });
 });
