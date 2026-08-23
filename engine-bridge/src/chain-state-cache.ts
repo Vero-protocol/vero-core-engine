@@ -110,6 +110,7 @@ export class ChainStateCache {
     try {
       const data = await fetcher(this.rpc);
       this.cache.set(key, { data, updatedAt: Date.now(), isRevalidating: false });
+      this.evictIfNeeded();
     } catch (error) {
       const item = this.cache.get(key);
       if (item) {

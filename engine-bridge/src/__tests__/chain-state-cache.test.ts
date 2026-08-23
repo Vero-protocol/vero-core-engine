@@ -9,6 +9,17 @@ function makeRpc(): RpcClient {
   return rpc;
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(resolvePromise => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe("ChainStateCache", () => {
   describe("bounded cache (maxEntries)", () => {
     it("caps cache size at maxEntries when more distinct keys are inserted", async () => {
@@ -51,6 +62,41 @@ describe("ChainStateCache", () => {
       await cache.getSwr("c", fetcher);
 
       expect((cache as any).cache.size).toBe(3);
+    });
+
+    it("reapplies the LRU bound when revalidation resurrects an evicted entry", async () => {
+      const rpc = makeRpc();
+      const cache = new ChainStateCache(rpc, -1, 2);
+      const initialFetcher = async () => ({ value: "initial" });
+
+      await cache.getSwr("a", initialFetcher);
+      await cache.getSwr("b", initialFetcher);
+
+      const refreshStarted = deferred<void>();
+      const refreshResult = deferred<{ value: string }>();
+      const stale = await cache.getSwr("a", async () => {
+        refreshStarted.resolve(undefined);
+        return refreshResult.promise;
+      });
+      await refreshStarted.promise;
+      expect(stale).toEqual({ value: "initial" });
+
+      await cache.getSwr("c", initialFetcher);
+      await cache.getSwr("d", initialFetcher);
+
+      const cacheEntries = (
+        cache as unknown as {
+          cache: Map<string, { data: { value: string } }>;
+        }
+      ).cache;
+      expect([...cacheEntries.keys()]).toEqual(["c", "d"]);
+
+      refreshResult.resolve({ value: "refreshed" });
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(cacheEntries.size).toBe(2);
+      expect([...cacheEntries.keys()]).toEqual(["d", "a"]);
+      expect(cacheEntries.get("a")?.data).toEqual({ value: "refreshed" });
     });
   });
 
