@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import type { IncomingMessage } from "http";
 
 export interface RelayerAuthOptions {
@@ -37,15 +38,19 @@ function extractApiKey(req: IncomingMessage): string | null {
 }
 
 export class RelayerAuth {
-  private readonly apiKeys: Set<string>;
+  private readonly apiKeys: string[];
 
   constructor(options: RelayerAuthOptions = {}) {
-    this.apiKeys = new Set(options.apiKeys ?? []);
+    this.apiKeys = options.apiKeys ?? [];
   }
 
   verifyClient(info: VerifyClientInfo, cb: VerifyClientCallback): void {
     const key = extractApiKey(info.req);
-    if (key && this.apiKeys.has(key)) {
+    if (key && this.apiKeys.some(apiKey => {
+      const candidate = Buffer.from(key);
+      const expected = Buffer.from(apiKey);
+      return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+    })) {
       cb(true);
       return;
     }
