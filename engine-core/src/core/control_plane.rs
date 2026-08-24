@@ -49,6 +49,16 @@ const RESERVED_KEYS: &[Symbol] = &[
     symbol_short!("VERSION"),
     symbol_short!("VER_INIT"),
     symbol_short!("ZK_COUNT"),
+    // RBAC slots owned by core::access. Without these, update_param could
+    // overwrite C_ADMIN (an Address) with a u64, after which every
+    // require_role fails host conversion — and access::initialize refuses to
+    // re-run because C_INIT is still set, so there is no recovery path.
+    symbol_short!("C_INIT"),
+    symbol_short!("C_ADMIN"),
+    symbol_short!("C_OPERS"),
+    symbol_short!("C_AUDIT"),
+    // Proxy storage gap.
+    symbol_short!("GAP"),
 ];
 
 #[contracterror]

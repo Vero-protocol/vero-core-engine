@@ -1,5 +1,5 @@
 import { Keypair, Networks, WebAuth } from "@stellar/stellar-sdk";
-import { WalletConnector } from "../wallet-connector";
+import { WalletConnector, type AccountLoader } from "../wallet-connector";
 
 describe("WalletConnector", () => {
   const networkPassphrase = Networks.TESTNET;
@@ -7,7 +7,14 @@ describe("WalletConnector", () => {
   const serverKeypair = Keypair.random();
   const clientKeypair = Keypair.random();
 
-  it("creates and verifies a valid challenge-response", () => {
+  /** A single master key at full weight, med_threshold 1 — the common case. */
+  const masterKeyLoader = (accountId: string): AccountLoader =>
+    async () => ({
+      signers: [{ key: accountId, weight: 1, type: "ed25519_public_key" }],
+      thresholds: { med_threshold: 1 },
+    });
+
+  function signedChallenge(signer: Keypair): string {
     const xdr = WalletConnector.createChallenge({
       serverKeypair,
       clientAddress: clientKeypair.publicKey(),
@@ -15,9 +22,6 @@ describe("WalletConnector", () => {
       domain,
     });
 
-    expect(xdr).toBeDefined();
-
-    // Sign the challenge as the client
     const { tx: transaction } = WebAuth.readChallengeTx(
       xdr,
       serverKeypair.publicKey(),
@@ -26,47 +30,94 @@ describe("WalletConnector", () => {
       domain
     );
 
-    transaction.sign(clientKeypair);
-    const signedXdr = transaction.toEnvelope().toXDR("base64").toString();
+    transaction.sign(signer);
+    return transaction.toEnvelope().toXDR("base64").toString();
+  }
 
-    const verifiedAddress = WalletConnector.verifyResponse(
-      signedXdr,
+  it("creates and verifies a valid challenge-response", async () => {
+    const verifiedAddress = await WalletConnector.verifyResponse(
+      signedChallenge(clientKeypair),
       serverKeypair.publicKey(),
       networkPassphrase,
-      domain
+      domain,
+      masterKeyLoader(clientKeypair.publicKey())
     );
 
     expect(verifiedAddress).toBe(clientKeypair.publicKey());
   });
 
-  it("throws error for invalid signature", () => {
-    const xdr = WalletConnector.createChallenge({
-      serverKeypair,
-      clientAddress: clientKeypair.publicKey(),
-      networkPassphrase,
-      domain,
-    });
-
-    // Don't sign as the client (or sign with wrong key)
+  it("throws error for invalid signature", async () => {
     const otherKeypair = Keypair.random();
-    const { tx: transaction } = WebAuth.readChallengeTx(
-      xdr,
-      serverKeypair.publicKey(),
-      networkPassphrase,
-      domain,
-      domain
-    );
 
-    transaction.sign(otherKeypair);
-    const signedXdr = transaction.toEnvelope().toXDR("base64").toString();
-
-    expect(() => {
+    await expect(
       WalletConnector.verifyResponse(
-        signedXdr,
+        signedChallenge(otherKeypair),
         serverKeypair.publicKey(),
         networkPassphrase,
-        domain
-      );
-    }).toThrow("Invalid signature: client signature missing or incorrect");
+        domain,
+        masterKeyLoader(clientKeypair.publicKey())
+      )
+    ).rejects.toThrow("Invalid signature: client signature missing or incorrect");
+  });
+
+  // Verification used to pass a fabricated signer set — the account ID read out
+  // of the submitted XDR, at weight 1, threshold 1 — and never fetched the real
+  // account. A revoked master key (weight 0) therefore still authenticated.
+  it("rejects a master key whose weight has been revoked to zero", async () => {
+    const revokedLoader: AccountLoader = async () => ({
+      signers: [
+        { key: clientKeypair.publicKey(), weight: 0, type: "ed25519_public_key" },
+      ],
+      thresholds: { med_threshold: 1 },
+    });
+
+    await expect(
+      WalletConnector.verifyResponse(
+        signedChallenge(clientKeypair),
+        serverKeypair.publicKey(),
+        networkPassphrase,
+        domain,
+        revokedLoader
+      )
+    ).rejects.toThrow("Invalid signature: client signature missing or incorrect");
+  });
+
+  // A single signature must not satisfy a multi-sig account: the old fabricated
+  // set hardcoded threshold 1 regardless of the account's real med_threshold.
+  it("rejects a single signature on a multi-sig account below threshold", async () => {
+    const coSigner = Keypair.random();
+    const multisigLoader: AccountLoader = async () => ({
+      signers: [
+        { key: clientKeypair.publicKey(), weight: 1, type: "ed25519_public_key" },
+        { key: coSigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+      ],
+      thresholds: { med_threshold: 2 },
+    });
+
+    await expect(
+      WalletConnector.verifyResponse(
+        signedChallenge(clientKeypair),
+        serverKeypair.publicKey(),
+        networkPassphrase,
+        domain,
+        multisigLoader
+      )
+    ).rejects.toThrow("Invalid signature: client signature missing or incorrect");
+  });
+
+  it("fails closed when the account cannot be loaded", async () => {
+    const failingLoader: AccountLoader = async () => {
+      throw new Error("404 Not Found");
+    };
+
+    await expect(
+      WalletConnector.verifyResponse(
+        signedChallenge(clientKeypair),
+        serverKeypair.publicKey(),
+        networkPassphrase,
+        domain,
+        failingLoader
+      )
+    ).rejects.toThrow(/unable to load account/i);
   });
 });
