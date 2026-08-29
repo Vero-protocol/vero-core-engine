@@ -22,20 +22,11 @@ export class NonceManager {
    * The caller MUST call `release(accountId, sequence)` on submission failure.
    */
   async reserve(accountId: string): Promise<bigint> {
-    await this.waitForLock(accountId);
-
-    let resolve!: () => void;
-    const lock = new Promise<void>(r => { resolve = r; });
-    this.locks.set(accountId, lock);
-
-    try {
+    return this.withLock(accountId, async () => {
       const seq = await this.nextSequence(accountId);
       this.cache.set(accountId, seq + 1n);
       return seq;
-    } finally {
-      this.locks.delete(accountId);
-      resolve();
-    }
+    });
   }
 
   /** Return a sequence that was never submitted so it can be reused. */
@@ -48,8 +39,10 @@ export class NonceManager {
 
   /** Force a fresh read from the network (e.g. after fee-bump or manual tx). */
   async refresh(accountId: string): Promise<void> {
-    this.cache.delete(accountId);
-    await this.nextSequence(accountId); // warms the cache
+    await this.withLock(accountId, async () => {
+      this.cache.delete(accountId);
+      await this.nextSequence(accountId); // warms the cache
+    });
   }
 
   private async nextSequence(accountId: string): Promise<bigint> {
@@ -62,8 +55,26 @@ export class NonceManager {
     return seq + 1n;
   }
 
-  private async waitForLock(accountId: string): Promise<void> {
-    const existing = this.locks.get(accountId);
-    if (existing) await existing;
+  /**
+   * Run `fn` with exclusive access to `accountId` so that cache reads and
+   * writes from different callers can never interleave.
+   */
+  private async withLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
+    // Loop rather than await once: several callers may be parked on the same
+    // lock, so each has to re-check that the slot is free after waking.
+    for (let held = this.locks.get(accountId); held; held = this.locks.get(accountId)) {
+      await held;
+    }
+
+    let resolve!: () => void;
+    const lock = new Promise<void>(r => { resolve = r; });
+    this.locks.set(accountId, lock);
+
+    try {
+      return await fn();
+    } finally {
+      this.locks.delete(accountId);
+      resolve();
+    }
   }
 }
