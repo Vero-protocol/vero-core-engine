@@ -122,7 +122,12 @@ export class TxAggregator {
    */
   async execute(
     transaction: Transaction,
-    opts: { pollIntervalMs?: number; timeoutMs?: number } = {},
+    opts: { 
+      pollIntervalMs?: number; 
+      timeoutMs?: number;
+      sourceAccountId?: string;
+      sequence?: bigint;
+    } = {},
   ): Promise<SorobanRpc.Api.GetTransactionResponse> {
     const pollIntervalMs = opts.pollIntervalMs ?? 1000;
     const timeoutMs = opts.timeoutMs ?? 30000;
@@ -134,11 +139,17 @@ export class TxAggregator {
     });
 
     if (sendResponse.status === "ERROR") {
+      if (opts.sourceAccountId && opts.sequence) {
+        this.nonceManager.release(opts.sourceAccountId, opts.sequence);
+      }
       throw new Error(`TxAggregator: sendTransaction failed with status ERROR: ${(sendResponse as any).errorResultXdr || "No error result XDR"}`);
     }
 
     while (true) {
       if (Date.now() - startTime > timeoutMs) {
+        if (opts.sourceAccountId && opts.sequence) {
+          this.nonceManager.release(opts.sourceAccountId, opts.sequence);
+        }
         throw new Error(`TxAggregator: transaction execution timed out after ${timeoutMs}ms`);
       }
 

@@ -105,7 +105,12 @@ describe("TxAggregator", () => {
       feeOptions: { multiplier: 2, safetyStroops: 25 },
     });
 
-    const res = await aggregator.execute(batch.transaction, { pollIntervalMs: 1, timeoutMs: 100 });
+    const res = await aggregator.execute(batch.transaction, { 
+      pollIntervalMs: 1, 
+      timeoutMs: 100,
+      sourceAccountId: signer.publicKey(),
+      sequence: batch.sequence,
+    });
     expect(res.status).toBe("SUCCESS");
     expect(pollCount).toBe(2);
   });
@@ -137,7 +142,12 @@ describe("TxAggregator", () => {
       feeOptions: { multiplier: 2, safetyStroops: 25 },
     });
 
-    await expect(aggregator.execute(batch.transaction, { pollIntervalMs: 1, timeoutMs: 100 }))
+    await expect(aggregator.execute(batch.transaction, { 
+      pollIntervalMs: 1, 
+      timeoutMs: 100,
+      sourceAccountId: signer.publicKey(),
+      sequence: batch.sequence,
+    }))
       .rejects.toThrow("TxAggregator: sendTransaction failed with status ERROR: bad-tx");
   });
 
@@ -169,7 +179,12 @@ describe("TxAggregator", () => {
       feeOptions: { multiplier: 2, safetyStroops: 25 },
     });
 
-    await expect(aggregator.execute(batch.transaction, { pollIntervalMs: 1, timeoutMs: 100 }))
+    await expect(aggregator.execute(batch.transaction, { 
+      pollIntervalMs: 1, 
+      timeoutMs: 100,
+      sourceAccountId: signer.publicKey(),
+      sequence: batch.sequence,
+    }))
       .rejects.toThrow("TxAggregator: transaction failed with result: fail-reason");
   });
 
@@ -201,7 +216,95 @@ describe("TxAggregator", () => {
       feeOptions: { multiplier: 2, safetyStroops: 25 },
     });
 
-    await expect(aggregator.execute(batch.transaction, { pollIntervalMs: 5, timeoutMs: 20 }))
+    await expect(aggregator.execute(batch.transaction, { 
+      pollIntervalMs: 5, 
+      timeoutMs: 20,
+      sourceAccountId: signer.publicKey(),
+      sequence: batch.sequence,
+    }))
       .rejects.toThrow("TxAggregator: transaction execution timed out");
+  });
+
+  it("releases nonce on sendTransaction ERROR", async () => {
+    const rpc = new RpcClient(["http://test"]);
+    rpc.call = async (fn: any) => {
+      return fn({
+        getFeeStats: async () => ({ base_fee: 100 }),
+        getAccount: async (_: string) => ({ sequenceNumber: () => "100" }),
+        sendTransaction: async () => ({ status: "ERROR", errorResultXdr: "bad-tx" }),
+      });
+    };
+
+    const nonceManager = new NonceManager(rpc);
+    const aggregator = new TxAggregator(
+      rpc,
+      nonceManager,
+      new GasOracle(),
+      Networks.TESTNET,
+    );
+
+    const signer = Keypair.random();
+    const batch = await aggregator.build({
+      sourceAccountId: signer.publicKey(),
+      operations: [
+        Operation.manageData({ name: "batched-1", value: "a" }) as any,
+      ],
+      signers: [signer],
+      feeOptions: { multiplier: 2, safetyStroops: 25 },
+    });
+
+    await expect(
+      aggregator.execute(batch.transaction, { 
+        pollIntervalMs: 1, 
+        timeoutMs: 100,
+        sourceAccountId: signer.publicKey(),
+        sequence: batch.sequence,
+      })
+    ).rejects.toThrow("TxAggregator: sendTransaction failed with status ERROR: bad-tx");
+
+    const nextSeq = await nonceManager.reserve(signer.publicKey());
+    expect(nextSeq).toBe(batch.sequence);
+  });
+
+  it("releases nonce on poll-loop timeout", async () => {
+    const rpc = new RpcClient(["http://test"]);
+    rpc.call = async (fn: any) => {
+      return fn({
+        getFeeStats: async () => ({ base_fee: 100 }),
+        getAccount: async (_: string) => ({ sequenceNumber: () => "100" }),
+        sendTransaction: async () => ({ status: "PENDING" }),
+        getTransaction: async () => ({ status: "NOT_FOUND" }),
+      });
+    };
+
+    const nonceManager = new NonceManager(rpc);
+    const aggregator = new TxAggregator(
+      rpc,
+      nonceManager,
+      new GasOracle(),
+      Networks.TESTNET,
+    );
+
+    const signer = Keypair.random();
+    const batch = await aggregator.build({
+      sourceAccountId: signer.publicKey(),
+      operations: [
+        Operation.manageData({ name: "batched-1", value: "a" }) as any,
+      ],
+      signers: [signer],
+      feeOptions: { multiplier: 2, safetyStroops: 25 },
+    });
+
+    await expect(
+      aggregator.execute(batch.transaction, { 
+        pollIntervalMs: 5, 
+        timeoutMs: 20,
+        sourceAccountId: signer.publicKey(),
+        sequence: batch.sequence,
+      })
+    ).rejects.toThrow("TxAggregator: transaction execution timed out");
+
+    const nextSeq = await nonceManager.reserve(signer.publicKey());
+    expect(nextSeq).toBe(batch.sequence);
   });
 });
