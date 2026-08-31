@@ -49,3 +49,10 @@ engine-core / engine-bridge — affected files:
 - [ ] `docs/` updated if public interface or architecture changes.
 - [ ] No new `cargo clippy` warnings; `npm run lint` clean.
 - [ ] Changelog entry added.
+
+---
+
+**If you pick this issue up:** the pull request that closes it needs a **detailed
+description** — what was wrong, the approach you took, anything the reviewer
+should look at closely, and how you verified it. A one-line description will be
+sent back before review. See CONTRIBUTING.md.
