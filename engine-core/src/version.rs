@@ -61,7 +61,9 @@ pub fn init_version(env: &Env) {
     if env.storage().instance().has(&KEY_VERSION_INIT) {
         panic_with_error!(env, VersionError::AlreadyInitialized);
     }
-    env.storage().instance().set(&KEY_VERSION, &CONTRACT_VERSION);
+    env.storage()
+        .instance()
+        .set(&KEY_VERSION, &CONTRACT_VERSION);
     env.storage().instance().set(&KEY_VERSION_INIT, &true);
 }
 
@@ -131,7 +133,7 @@ mod tests {
     fn version_is_non_empty() {
         let env = Env::default();
         let vs = version_string(&env);
-        assert!(vs.len() > 0);
+        assert!(!vs.is_empty());
     }
 
     #[test]

@@ -2,12 +2,12 @@ use super::control_plane::{ControlPlane, ControlPlaneClient};
 use super::proxy::{UpgradeableProxy, UpgradeableProxyClient};
 use crate::audit::compute_commitment;
 use crate::core::zk_hooks;
-use crate::types::StateCommitment;
+use crate::types::{Proposal, ProposalState, StateCommitment};
 use crate::version::{CONTRACT_VERSION, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
 use soroban_sdk::{
     symbol_short,
-    testutils::Address as _,
-    Address, Bytes, BytesN, Env, Map, Symbol,
+    testutils::{Address as _, Ledger as _},
+    vec, Address, Bytes, BytesN, Env, Map, Symbol,
 };
 
 fn commitment(env: &Env, author: &Address, sequence: u64, payload: &BytesN<32>) -> StateCommitment {
@@ -35,6 +35,7 @@ fn setup_client(env: &Env) -> (Address, ControlPlaneClient<'_>) {
     (contract_id, client)
 }
 
+#[allow(dead_code)]
 fn make_commitment(env: &Env, admin: &Address, seq: u32) -> (StateCommitment, BytesN<32>) {
     let payload = BytesN::from_array(env, &[seq as u8; 32]);
     let hash = compute_commitment(&[0u8; 32], seq as u64, &payload.to_array());
@@ -66,7 +67,10 @@ fn test_initialize() {
     // Version tracking is initialised
     assert_eq!(client.contract_version(), CONTRACT_VERSION);
     let (maj, min, pat) = client.version();
-    assert_eq!((maj, min, pat), (VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH));
+    assert_eq!(
+        (maj, min, pat),
+        (VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
+    );
 }
 
 #[test]
@@ -234,7 +238,7 @@ fn test_batch_update_param_success() {
     let param1_val = 100;
     let param2_key = symbol_short!("FEE2");
     let param2_val = 200;
-    
+
     let mut params = soroban_sdk::Vec::new(&env);
     params.push_back((param1_key, param1_val));
     params.push_back((param2_key, param2_val));
@@ -367,8 +371,7 @@ fn test_proxy_upgrade_rejects_non_admin() {
         env.storage()
             .instance()
             .set(&soroban_sdk::symbol_short!("ADMIN"), &admin);
-        let gap: soroban_sdk::Vec<u64> =
-            soroban_sdk::Vec::from_array(&env, [0u64; 50]);
+        let gap: soroban_sdk::Vec<u64> = soroban_sdk::Vec::from_array(&env, [0u64; 50]);
         env.storage()
             .instance()
             .set(&soroban_sdk::symbol_short!("GAP"), &gap);
@@ -406,4 +409,188 @@ fn test_update_param_rejects_rbac_storage_keys() {
             key
         );
     }
+}
+
+// =========================================================================
+// Integration tests for issue #178: ControlPlane entrypoints
+// =========================================================================
+
+#[test]
+fn test_control_plane_emergency_recovery_flow() {
+    let env = Env::default();
+    let (client, admin, _) = initialized_client(&env);
+
+    let recovery_admin1 = Address::generate(&env);
+    let recovery_admin2 = Address::generate(&env);
+    let token = Address::generate(&env);
+    let dest = Address::generate(&env);
+
+    // 1. Non-admin cannot initialize recovery
+    let non_admin = Address::generate(&env);
+    let res = client.try_init_recovery(
+        &non_admin,
+        &vec![&env, recovery_admin1.clone(), recovery_admin2.clone()],
+        &2,
+    );
+    assert!(res.is_err(), "Non-admin must not initialize recovery");
+
+    // 2. Admin initializes recovery
+    client.init_recovery(
+        &admin,
+        &vec![&env, recovery_admin1.clone(), recovery_admin2.clone()],
+        &2,
+    );
+
+    // 3. Unauthorized caller cannot request recovery
+    let res = client.try_request_recovery(&non_admin, &token, &dest, &1_000);
+    assert!(res.is_err(), "Unauthorized caller cannot request recovery");
+
+    // 4. Authorized recovery admin requests recovery
+    client.request_recovery(&recovery_admin1, &token, &dest, &1_000);
+
+    // 5. Approvals should list recovery_admin1
+    let approvals = client.pending_recovery_approvals();
+    assert_eq!(approvals.len(), 1);
+    assert_eq!(approvals.get(0).unwrap(), recovery_admin1);
+
+    // 6. Non-recovery-admin cannot approve recovery
+    let res = client.try_approve_recovery(&non_admin);
+    assert!(res.is_err(), "Non-admin cannot approve recovery");
+}
+
+#[test]
+fn test_control_plane_treasury_outflow_and_snapshot_flow() {
+    let env = Env::default();
+    let (client, admin, _) = initialized_client(&env);
+
+    let treasury_admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+
+    // 1. Non-admin cannot init treasury
+    let res = client.try_init_treasury(&non_admin, &treasury_admin);
+    assert!(res.is_err(), "Non-admin cannot init treasury");
+
+    // 2. Admin inits treasury
+    client.init_treasury(&admin, &treasury_admin);
+
+    // 3. Unauthorized caller cannot schedule outflow
+    let res = client.try_schedule_outflow(&non_admin, &101, &500);
+    assert!(res.is_err(), "Non-treasury admin cannot schedule outflow");
+
+    // 4. Treasury admin schedules outflow
+    let unlock_at = client.schedule_outflow(&treasury_admin, &101, &500);
+    assert!(unlock_at > env.ledger().timestamp());
+
+    let outflow = client.get_outflow(&101).expect("Outflow must exist");
+    assert_eq!(outflow.id, 101);
+    assert_eq!(outflow.amount, 500);
+    assert!(!outflow.executed);
+
+    // 5. Outflow execution fails before timelock
+    let res = client.try_execute_outflow(&treasury_admin, &101);
+    assert!(res.is_err(), "Outflow execution must fail before timelock");
+
+    // 6. Record snapshot by treasury admin
+    let context = Map::new(&env);
+    let snap_id = client.record_snapshot(
+        &treasury_admin,
+        &10_000_000,
+        &150,
+        &crate::types::TriggerKind::Manual,
+        &context,
+    );
+    assert_eq!(snap_id, 1);
+
+    let snap = client.get_snapshot(&snap_id).expect("Snapshot must exist");
+    assert_eq!(snap.total_balance, 10_000_000);
+    assert_eq!(snap.account_count, 150);
+
+    let latest_snap = client
+        .get_latest_snapshot()
+        .expect("Latest snapshot must exist");
+    assert_eq!(latest_snap.id, snap_id);
+}
+
+#[test]
+fn test_control_plane_burn_flow() {
+    let env = Env::default();
+    let (client, admin, _) = initialized_client(&env);
+
+    let non_admin = Address::generate(&env);
+    let valid_dest = Address::generate(&env);
+
+    // 1. Non-admin cannot burn
+    let res = client.try_burn_to(&non_admin, &valid_dest, &1_000);
+    assert!(res.is_err(), "Non-admin must not be permitted to burn");
+
+    // 2. Zero address rejection view check
+    let zero_addr = Address::from_string(&soroban_sdk::String::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    ));
+    let res = client.try_reject_zero_address(&zero_addr);
+    assert!(res.is_err(), "Zero address must be rejected");
+
+    let res = client.try_reject_zero_address(&valid_dest);
+    assert!(res.is_ok(), "Valid address must pass reject_zero_address");
+
+    // 3. Admin burn with zero address is rejected
+    let res = client.try_burn_to(&admin, &zero_addr, &1_000);
+    assert!(res.is_err(), "Burn to zero address must be rejected");
+
+    // 4. Admin burn with invalid amount (<= 0) is rejected
+    let res = client.try_burn_to(&admin, &valid_dest, &0);
+    assert!(res.is_err(), "Burn with 0 amount must be rejected");
+
+    // 5. Admin burn with valid destination and amount succeeds
+    client.burn_to(&admin, &valid_dest, &1_000);
+}
+
+#[test]
+fn test_control_plane_governed_upgrade_flow() {
+    let env = Env::default();
+    let (client, _admin, contract_id) = initialized_client(&env);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let wasm_hash = env.deployer().upload_contract_wasm(Bytes::new(&env));
+
+    // 1. Unapproved proposal upgrade fails
+    let res = client.try_governed_upgrade(&42, &wasm_hash);
+    assert!(res.is_err(), "Upgrade must fail on unapproved proposal");
+
+    // 2. Setup governance multi-sig
+    env.as_contract(&contract_id, || {
+        crate::governance::init(&env, vec![&env, alice.clone(), bob.clone()], 2);
+    });
+
+    let proposal = Proposal {
+        id: 42,
+        action_hash: wasm_hash.clone(),
+        proposer: alice.clone(),
+        approved_by: vec![&env],
+        state: ProposalState::Pending,
+    };
+    client.propose(&proposal);
+
+    // 3. Single approval - still not approved (quorum is 2)
+    client.approve(&alice, &42);
+    let res = client.try_governed_upgrade(&42, &wasm_hash);
+    assert!(res.is_err(), "Upgrade must fail before quorum reached");
+
+    // 4. Second approval reaches quorum -> moves to Approved
+    client.approve(&bob, &42);
+
+    // 5. Wrong wasm hash rejected even if proposal approved
+    let wrong_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let res = client.try_governed_upgrade(&42, &wrong_hash);
+    assert!(
+        res.is_err(),
+        "Upgrade with mismatched hash must be rejected"
+    );
+
+    // 6. Timelock must pass before execute in upgrade
+    env.ledger()
+        .set_sequence_number(crate::governance::TIMELOCK_LEDGERS + 10);
+    client.governed_upgrade(&42, &wasm_hash);
 }

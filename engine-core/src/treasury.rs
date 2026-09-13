@@ -1,6 +1,5 @@
 //! Treasury state snapshots and outflow time-locking.
 
-
 use crate::circuit_breaker::assert_closed;
 
 use crate::event_struct::{ACT_REQUEST, ACT_SNAPSHOT, ACT_TRIGGERED, MOD_TREASURY};
@@ -20,11 +19,8 @@ const MAX_BALANCE: i128 = 1_000_000_000_000_000_000;
 const MAX_ACCOUNT_COUNT: u32 = 10_000_000;
 pub const OUTFLOW_TIMELOCK_SECONDS: u64 = 24 * 60 * 60;
 
-
 /// About 7 days at 5-second ledger time, enough for off-chain indexer pickup.
-
 /// Temporary storage TTL constants (ledgers).
-
 const SNAP_TTL_THRESHOLD: u32 = 17_280;
 const SNAP_TTL_EXTEND_TO: u32 = 17_280 * 7;
 
@@ -163,7 +159,6 @@ pub fn get_outflow(env: &Env, outflow_id: u64) -> Option<TimelockedOutflow> {
     load_outflows(env).get(outflow_id)
 }
 
-
 /// Record a treasury snapshot and return its monotonic snapshot id.
 ///
 /// Authorization is enforced in this module, not only at a future ControlPlane
@@ -208,7 +203,6 @@ pub fn record_snapshot(
         trigger,
         context,
     };
-
 
     let snapshot_key = make_snap_key(snapshot_id);
 
@@ -302,7 +296,6 @@ fn compute_hash(env: &Env, balance: i128, account_count: u32, ledger: u32) -> By
     raw[20..24].copy_from_slice(&ledger.to_be_bytes());
     env.crypto().sha256(&Bytes::from_slice(env, &raw)).into()
 }
-
 
 fn make_snap_key(id: u64) -> TreasuryKey {
     TreasuryKey::Snapshot(id)

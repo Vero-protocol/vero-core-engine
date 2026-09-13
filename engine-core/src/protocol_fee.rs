@@ -129,11 +129,7 @@ fn fee_as_u64(env: &Env, fee: i128) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::{Address as _, MockAuth, MockAuthInvoke},
-        Env, IntoVal,
-    };
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Env};
 
     #[contract]
     pub struct TestContract;
@@ -254,4 +250,4 @@ mod tests {
         let recipient = Address::generate(&env);
         env.as_contract(&contract_id, || init(&env, MAX_BPS + 1, &recipient));
     }
-                        }
+}
