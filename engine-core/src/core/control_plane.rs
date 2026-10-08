@@ -14,6 +14,7 @@ use crate::audit;
 use crate::circuit_breaker;
 use crate::event_struct::{ACT_EXECUTE, ACT_PROPOSE, MOD_GOV};
 use crate::event_utils::publish_event;
+use crate::treasury::TimelockedOutflow;
 use crate::types::{Proposal, StateCommitment};
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
@@ -279,6 +280,74 @@ impl ControlPlane {
             env.storage().instance().set(&param.0, &param.1);
         }
         increment_param_count(&env);
+    }
+
+    // --- Treasury Entrypoints (#178) ---
+
+    /// Initialize the treasury configuration.
+    pub fn init_treasury(env: Env, admin: Address) {
+        crate::treasury::init(&env, admin);
+    }
+
+    /// Queue a treasury outflow behind the mandatory 24-hour time-lock.
+    pub fn schedule_outflow(env: Env, caller: Address, outflow_id: u64, amount: i128) -> u64 {
+        crate::treasury::schedule_outflow(&env, &caller, outflow_id, amount)
+    }
+
+    /// Execute a timelocked treasury outflow after the waiting period elapses.
+    pub fn execute_outflow(env: Env, caller: Address, outflow_id: u64) -> TimelockedOutflow {
+        crate::treasury::execute_outflow(&env, &caller, outflow_id)
+    }
+
+    /// Read an outflow record by id.
+    pub fn get_outflow(env: Env, outflow_id: u64) -> Option<TimelockedOutflow> {
+        crate::treasury::get_outflow(&env, outflow_id)
+    }
+
+    // --- Burn Entrypoints (#178) ---
+
+    /// Validate zero-address guards and execute a burn-safe transfer.
+    pub fn burn_to(env: Env, to: Address, amount: i128) {
+        crate::burn::burn_to(&env, &to, amount);
+    }
+
+    // --- Emergency Recovery Entrypoints (#178) ---
+
+    /// Initialize the emergency recovery threshold guardian committee.
+    pub fn init_emergency_recovery(
+        env: Env,
+        admins: soroban_sdk::Vec<Address>,
+        threshold: u32,
+    ) {
+        crate::emergency_recovery::init(&env, admins, threshold);
+    }
+
+    /// Submit an emergency fund recovery request.
+    pub fn request_emergency_recovery(
+        env: Env,
+        requester: Address,
+        token: Address,
+        dest: Address,
+        amount: i128,
+    ) {
+        crate::emergency_recovery::request(&env, &requester, &token, &dest, amount);
+    }
+
+    /// Approve a pending emergency fund recovery request.
+    pub fn approve_emergency_recovery(env: Env, admin: Address) {
+        crate::emergency_recovery::approve(&env, &admin);
+    }
+
+    /// View pending emergency recovery approvers.
+    pub fn pending_emergency_approvals(env: Env) -> soroban_sdk::Vec<Address> {
+        crate::emergency_recovery::pending_approvals(&env)
+    }
+
+    // --- Governed Upgrade Entrypoint (#178) ---
+
+    /// Upgrade contract WASM byte-code gated by multi-sig governance approval.
+    pub fn upgrade_contract(env: Env, proposal_id: u64, new_wasm_hash: BytesN<32>) {
+        crate::upgrade::upgrade(&env, proposal_id, new_wasm_hash);
     }
 }
 
