@@ -15,9 +15,7 @@ const GAP_KEY: Symbol = soroban_sdk::symbol_short!("GAP");
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum ProxyError {
-    NotInitialized = 1,
-    AlreadyInitialized = 2,
-    InvalidWasmHash = 3,
+    AlreadyInitialized = 1,
 }
 
 #[contract]
@@ -41,23 +39,10 @@ impl UpgradeableProxy {
         env.storage().instance().set(&GAP_KEY, &gap);
     }
 
-    /// Upgrade the contract's WASM code. Only the admin can perform this operation.
-    /// This provides a direct admin-controlled upgrade path.
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+    /// Upgrade the contract's WASM code. Routes through the governance-gated flow.
+    pub fn upgrade(env: Env, proposal_id: u64, new_wasm_hash: BytesN<32>) {
         crate::non_reentrant!(&env);
-
-        if !env.storage().instance().has(&ADMIN_KEY) {
-            panic_with_error!(&env, ProxyError::NotInitialized);
-        }
-        
-        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
-        admin.require_auth();
-        
-        if new_wasm_hash.to_array() == [0u8; 32] {
-            panic_with_error!(&env, ProxyError::InvalidWasmHash);
-        }
-        
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        crate::upgrade::upgrade(&env, proposal_id, new_wasm_hash);
     }
     
     /// ZK-ready integrity check invoked via the audit layer
