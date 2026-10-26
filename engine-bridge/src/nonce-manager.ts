@@ -58,23 +58,28 @@ export class NonceManager {
   /**
    * Run `fn` with exclusive access to `accountId` so that cache reads and
    * writes from different callers can never interleave.
+   *
+   * Enqueues the caller's lock synchronously onto the per-account promise chain
+   * before any `await` so concurrent `reserve()` / `refresh()` invocations are
+   * strictly serialised in arrival order without a check-then-act race window.
    */
   private async withLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
-    // Loop rather than await once: several callers may be parked on the same
-    // lock, so each has to re-check that the slot is free after waking.
-    for (let held = this.locks.get(accountId); held; held = this.locks.get(accountId)) {
-      await held;
-    }
+    const previous = this.locks.get(accountId) ?? Promise.resolve();
 
-    let resolve!: () => void;
-    const lock = new Promise<void>(r => { resolve = r; });
-    this.locks.set(accountId, lock);
+    let releaseLock!: () => void;
+    const current = new Promise<void>(r => { releaseLock = r; });
+    const tail = previous.then(() => current);
+    this.locks.set(accountId, tail);
+
+    await previous;
 
     try {
       return await fn();
     } finally {
-      this.locks.delete(accountId);
-      resolve();
+      if (this.locks.get(accountId) === tail) {
+        this.locks.delete(accountId);
+      }
+      releaseLock();
     }
   }
 }

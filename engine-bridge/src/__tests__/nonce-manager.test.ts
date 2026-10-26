@@ -104,4 +104,49 @@ describe("NonceManager", () => {
     expect(await reserved).toBe(201n);
     expect(calls).toHaveLength(1);
   });
+
+  it("serialises concurrent reserve() calls without duplicate sequence numbers", async () => {
+    const slowRead = deferred<string>();
+    const { rpc, calls } = stubRpc([slowRead.promise]);
+    const manager = new NonceManager(rpc);
+
+    const count = 10;
+    const pending = Array.from({ length: count }, () => manager.reserve(ACCOUNT));
+    await flush();
+
+    // Only the first caller should have triggered a network getAccount read.
+    expect(calls).toHaveLength(1);
+
+    slowRead.resolve("500");
+    const sequences = await Promise.all(pending);
+
+    expect(calls).toHaveLength(1);
+    expect(new Set(sequences).size).toBe(count);
+    expect(sequences).toEqual([
+      501n,
+      502n,
+      503n,
+      504n,
+      505n,
+      506n,
+      507n,
+      508n,
+      509n,
+      510n,
+    ]);
+  });
+
+  it("reuses released sequence numbers on subsequent reservations", async () => {
+    const { rpc, calls } = stubRpc(["100"]);
+    const manager = new NonceManager(rpc);
+
+    const first = await manager.reserve(ACCOUNT);
+    const second = await manager.reserve(ACCOUNT);
+    expect(first).toBe(101n);
+    expect(second).toBe(102n);
+
+    manager.release(ACCOUNT, first);
+    expect(await manager.reserve(ACCOUNT)).toBe(101n);
+    expect(calls).toHaveLength(1);
+  });
 });
