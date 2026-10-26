@@ -4,7 +4,7 @@
 //! predictable. A proposal moves through this state machine:
 //!
 //! ```text
-//! Pending ──(threshold approvals, strictly increasing signer order)──> Approved ──(timelock elapsed)──> Executed
+//! Pending ──(threshold approvals)──> Approved ──(timelock elapsed)──> Executed
 //! ```
 //!
 //! Invalid transitions panic with typed `GovError` values for auditability.
@@ -132,16 +132,6 @@ fn require_signer(env: &Env, signer: &Address) {
     }
 }
 
-fn signer_index(env: &Env, signer: &Address) -> u32 {
-    let signers = load_signers(env);
-    for i in 0..signers.len() {
-        if signers.get(i).unwrap() == *signer {
-            return i;
-        }
-    }
-    panic_with_error!(env, GovError::NotASigner);
-}
-
 fn require_stake(env: &Env, signer: &Address) {
     let min_stake: i128 = env.storage().instance().get(&KEY_MIN_STAKE).unwrap_or(0);
     if min_stake == 0 {
@@ -183,10 +173,9 @@ pub fn propose(env: &Env, mut proposal: Proposal) -> u64 {
     id
 }
 
-/// Record one signer approval. Approvals must arrive in strictly increasing
-/// signer order (by configured signer index) so that a fixed replay of the
-/// same approval set always produces the same audit trail. When quorum is
-/// reached, the proposal becomes `Approved` and its timelock starts.
+/// Record one signer approval. Any configured signer who has not yet approved
+/// may approve in any order. When quorum is reached, the proposal becomes
+/// `Approved` and its timelock starts.
 pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {
     crate::circuit_breaker::assert_closed(env);
     crate::non_reentrant!(env);
@@ -205,18 +194,6 @@ pub fn approve(env: &Env, signer: &Address, proposal_id: u64) {
     }
     if proposal.approved_by.contains(signer) {
         panic_with_error!(env, GovError::AlreadyApproved);
-    }
-
-    if !proposal.approved_by.is_empty() {
-        let last_signer = proposal
-            .approved_by
-            .get(proposal.approved_by.len() - 1)
-            .unwrap();
-        let last_index = signer_index(env, &last_signer);
-        let current_index = signer_index(env, signer);
-        if current_index <= last_index {
-            panic_with_error!(env, GovError::InvalidSignerOrder);
-        }
     }
 
     proposal.approved_by.push_back(signer.clone());
@@ -331,6 +308,39 @@ mod tests {
         env.as_contract(&contract_id, || {
             approve(&env, &bob, 1);
             assert_eq!(get_proposal(&env, 1).state, ProposalState::Approved);
+            assert_eq!(get_unlock_ledger(&env, 1), Some(TIMELOCK_LEDGERS));
+        });
+    }
+
+    #[test]
+    fn out_of_order_approval_still_reaches_threshold() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TestContract);
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let carol = Address::generate(&env);
+
+        // Configure 2-of-3 multisig with signers in order [alice(0), bob(1), carol(2)]
+        env.as_contract(&contract_id, || {
+            init(&env, vec![&env, alice.clone(), bob.clone(), carol.clone()], 2);
+        });
+        env.as_contract(&contract_id, || {
+            propose(&env, proposal(&env, 1, alice.clone()));
+        });
+
+        // Highest-index signer (carol, index 2) approves first
+        env.as_contract(&contract_id, || {
+            approve(&env, &carol, 1);
+            assert_eq!(get_proposal(&env, 1).state, ProposalState::Pending);
+        });
+
+        // Lower-index signer (bob, index 1) approves next and reaches threshold
+        env.as_contract(&contract_id, || {
+            approve(&env, &bob, 1);
+            let updated = get_proposal(&env, 1);
+            assert_eq!(updated.state, ProposalState::Approved);
+            assert_eq!(updated.approved_by.len(), 2);
             assert_eq!(get_unlock_ledger(&env, 1), Some(TIMELOCK_LEDGERS));
         });
     }
