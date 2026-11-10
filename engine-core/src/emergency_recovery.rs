@@ -155,7 +155,11 @@ fn clear_pending(env: &Env) {
 }
 
 fn require_admin(env: &Env, caller: &Address) {
-    let admins: Vec<Address> = env.storage().instance().get(&KEY_ADMINS).unwrap_or(vec![env]);
+    let admins: Vec<Address> = env
+        .storage()
+        .instance()
+        .get(&KEY_ADMINS)
+        .unwrap_or(vec![env]);
     if !admins.contains(caller) {
         panic_with_error!(env, RecoveryError::NotAdmin);
     }

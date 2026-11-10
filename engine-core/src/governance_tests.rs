@@ -219,19 +219,19 @@ mod tests {
             governance::approve(&env, &proposer, id);
         });
     }
-}
 
-/// State Transition Matrix (for documentation)
-///
-/// | Current State | Operation | Target State | Allowed | Error |
-/// |---|---|---|---|---|
-/// | Pending | approve (< threshold) | Pending | Yes | — |
-/// | Pending | approve (>= threshold) | Approved | Yes | — |
-/// | Pending | execute | — | No | InvalidStateTransition |
-/// | Approved | approve | — | No | InvalidStateTransition |
-/// | Approved | execute (timelock OK) | Executed | Yes | — |
-/// | Approved | execute (timelock active) | — | No | TimelockActive |
-/// | Executed | approve | — | No | InvalidStateTransition |
-/// | Executed | execute | — | No | InvalidStateTransition |
-#[allow(dead_code)]
-pub struct StateTransitionMatrix;
+    /// State Transition Matrix (for documentation)
+    ///
+    /// | Current State | Operation | Target State | Allowed | Error |
+    /// |---|---|---|---|---|
+    /// | Pending | approve (< threshold) | Pending | Yes | — |
+    /// | Pending | approve (>= threshold) | Approved | Yes | — |
+    /// | Pending | execute | — | No | InvalidStateTransition |
+    /// | Approved | approve | — | No | InvalidStateTransition |
+    /// | Approved | execute (timelock OK) | Executed | Yes | — |
+    /// | Approved | execute (timelock active) | — | No | TimelockActive |
+    /// | Executed | approve | — | No | InvalidStateTransition |
+    /// | Executed | execute | — | No | InvalidStateTransition |
+    #[allow(dead_code)]
+    pub struct StateTransitionMatrix;
+}

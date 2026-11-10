@@ -6,10 +6,10 @@ node_modules/
 engine-bridge/dist/
 
 # Secrets
-.env
 
 # Database
 *.db
 
 # OS
 .DS_Store
+config.bat

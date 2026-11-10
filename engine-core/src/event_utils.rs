@@ -20,7 +20,12 @@ pub fn zero_hash(env: &Env) -> BytesN<32> {
 }
 
 /// Compatibility function for legacy events.
-pub fn publish_event_legacy(env: &Env, event_type: BytesN<32>, action: BytesN<32>, payload: Map<Symbol, Val>) {
+pub fn publish_event_legacy(
+    env: &Env,
+    event_type: BytesN<32>,
+    action: BytesN<32>,
+    payload: Map<Symbol, Val>,
+) {
     // legacy publish
     env.events().publish((event_type, action), payload);
 }

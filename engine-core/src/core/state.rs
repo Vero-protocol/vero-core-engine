@@ -1,6 +1,6 @@
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Symbol};
-use crate::event_struct::{MOD_CORE, ACT_TRANSITION};
+use crate::event_struct::{ACT_TRANSITION, MOD_CORE};
 use crate::event_utils::publish_event;
+use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, Symbol};
 
 const KEY_STATE: Symbol = symbol_short!("PROTO_ST");
 
@@ -8,15 +8,15 @@ const KEY_STATE: Symbol = symbol_short!("PROTO_ST");
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum StateError {
     InvalidTransition = 1,
-    AlreadyInState    = 2,
+    AlreadyInState = 2,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum ProtocolState {
     Pending = 0,
-    Active  = 1,
+    Active = 1,
     Settled = 2,
-    Closed  = 3,
+    Closed = 3,
 }
 
 impl ProtocolState {
@@ -32,14 +32,14 @@ impl ProtocolState {
 }
 
 fn allowed_transition(from: ProtocolState, to: ProtocolState) -> bool {
-    match (from, to) {
-        (ProtocolState::Pending, ProtocolState::Active) => true,
-        (ProtocolState::Pending, ProtocolState::Closed) => true,
-        (ProtocolState::Active,  ProtocolState::Settled) => true,
-        (ProtocolState::Active,  ProtocolState::Closed) => true,
-        (ProtocolState::Settled, ProtocolState::Closed) => true,
-        _ => false,
-    }
+    matches!(
+        (from, to),
+        (ProtocolState::Pending, ProtocolState::Active)
+            | (ProtocolState::Pending, ProtocolState::Closed)
+            | (ProtocolState::Active, ProtocolState::Settled)
+            | (ProtocolState::Active, ProtocolState::Closed)
+            | (ProtocolState::Settled, ProtocolState::Closed)
+    )
 }
 
 pub fn init(env: &Env) {

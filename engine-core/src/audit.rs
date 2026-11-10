@@ -13,7 +13,9 @@ use crate::event_struct::{ACT_COMMIT, MOD_AUDIT};
 use crate::event_utils::{publish_event, publish_event_legacy};
 use crate::types::StateCommitment;
 use sha2::{Digest, Sha256};
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, BytesN, Env, IntoVal, Map, Symbol};
+use soroban_sdk::{
+    contracterror, panic_with_error, symbol_short, BytesN, Env, IntoVal, Map, Symbol,
+};
 
 const KEY_SEQ: Symbol = symbol_short!("SEQ");
 const KEY_PREV: Symbol = symbol_short!("PREV_H");
@@ -80,11 +82,7 @@ pub fn validate_transition(env: &Env, commitment: &StateCommitment, payload: &[u
 /// Validate and record a transition while the caller already holds the
 /// reentrancy guard. This lets orchestrating entrypoints protect a larger
 /// critical section without tripping the nested guard in `validate_transition`.
-pub(crate) fn validate_transition_inner(
-    env: &Env,
-    commitment: &StateCommitment,
-    payload: &[u8],
-) {
+pub(crate) fn validate_transition_inner(env: &Env, commitment: &StateCommitment, payload: &[u8]) {
     assert_closed(env);
 
     if !integrity_check(env, commitment, payload) {
@@ -96,7 +94,9 @@ pub(crate) fn validate_transition_inner(
     }
 
     env.storage().instance().set(&KEY_SEQ, &commitment.sequence);
-    env.storage().instance().set(&KEY_PREV, &commitment.state_hash);
+    env.storage()
+        .instance()
+        .set(&KEY_PREV, &commitment.state_hash);
 
     publish_event(
         env,
@@ -108,8 +108,16 @@ pub(crate) fn validate_transition_inner(
     // Emit structured Event for audit logs
     let mut payload = Map::new(env);
     payload.set(symbol_short!("seq"), commitment.sequence.into_val(env));
-    payload.set(symbol_short!("hash"), commitment.state_hash.clone().into_val(env));
-    publish_event_legacy(env, BytesN::from_array(env, &[0u8; 32]), BytesN::from_array(env, &[0u8; 32]), payload);
+    payload.set(
+        symbol_short!("hash"),
+        commitment.state_hash.clone().into_val(env),
+    );
+    publish_event_legacy(
+        env,
+        BytesN::from_array(env, &[0u8; 32]),
+        BytesN::from_array(env, &[0u8; 32]),
+        payload,
+    );
 }
 
 #[cfg(test)]

@@ -1,11 +1,11 @@
 {
   "name": "@vero/engine-bridge",
   "version": "0.1.0",
-  "description": "Vero Protocol — RPC failover, nonce management, event propagation",
+  "description": "Vero Protocol \u2014 RPC failover, nonce management, event propagation",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "node init && tsc",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "lint": "eslint src --ext .ts"
   },

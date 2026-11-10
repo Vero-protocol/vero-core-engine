@@ -5,8 +5,9 @@ mod tests {
 
     use crate::treasury;
     use crate::types::TriggerKind;
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, Map, Symbol, Val};
-
+    use soroban_sdk::{
+        contract, contractimpl, testutils::Address as _, Address, Env, Map, Symbol, Val,
+    };
 
     #[contract]
     pub struct TestContract;

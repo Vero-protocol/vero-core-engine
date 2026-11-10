@@ -1,11 +1,11 @@
 #![no_std]
 //! vero-audit-guard module
-//! 
+//!
 //! Standardizes security protocols and improves system resilience against vulnerabilities.
 //! Adheres to Rust safety standards.
 //! Integrates with the existing Audit-Guard API.
 
-use soroban_sdk::{contract, contractimpl, contracterror, Env, BytesN, Address, Bytes};
+use soroban_sdk::{contract, contracterror, contractimpl, Address, Bytes, BytesN, Env};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -44,15 +44,21 @@ impl AuditGuardContract {
 
     /// Integrates with the existing Audit module to validate a state transition.
     /// Adheres to Rust safety standards by avoiding unsafe blocks and performing boundary checks.
-    pub fn validate_and_audit(env: Env, public_key: BytesN<32>, payload: Bytes, signature: BytesN<64>) -> Result<(), AuditGuardError> {
+    pub fn validate_and_audit(
+        env: Env,
+        public_key: BytesN<32>,
+        payload: Bytes,
+        signature: BytesN<64>,
+    ) -> Result<(), AuditGuardError> {
         // Implementation of standard security protocol
-        if payload.len() == 0 {
+        if payload.is_empty() {
             return Err(AuditGuardError::InvalidPayload);
         }
 
         // Real signature verification
-        env.crypto().ed25519_verify(&public_key, &payload, &signature);
-        
+        env.crypto()
+            .ed25519_verify(&public_key, &payload, &signature);
+
         Ok(())
     }
 }
@@ -60,7 +66,7 @@ impl AuditGuardContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{testutils::{Address as _}, Env};
+    use soroban_sdk::{testutils::Address as _, Env};
 
     #[test]
     fn test_verify_context() {
@@ -94,7 +100,7 @@ mod test {
 
         client.validate_and_audit(&public_key, &payload, &invalid_signature);
     }
-    
+
     #[test]
     fn test_validate_and_audit_empty_payload() {
         let env = Env::default();

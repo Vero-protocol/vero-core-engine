@@ -7,14 +7,15 @@
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, panic_with_error, symbol_short, Address, Bytes, BytesN,
-    Env, Map, Symbol,
+    Env, Map, Symbol, Val, Vec,
 };
 
 use crate::audit;
 use crate::circuit_breaker;
 use crate::event_struct::{ACT_EXECUTE, ACT_PROPOSE, MOD_GOV};
 use crate::event_utils::publish_event;
-use crate::types::{Proposal, StateCommitment};
+use crate::treasury::TimelockedOutflow;
+use crate::types::{Proposal, StateCommitment, TreasurySnapshot, TriggerKind};
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
 const KEY_INIT: Symbol = symbol_short!("CP_INIT");
@@ -237,12 +238,7 @@ impl ControlPlane {
     ) {
         crate::non_reentrant!(&env);
         crate::core::zk_hooks::register_proof(
-            &env,
-            &caller,
-            state_root,
-            proof_hash,
-            block_seq,
-            metadata,
+            &env, &caller, state_root, proof_hash, block_seq, metadata,
         );
     }
 
@@ -279,6 +275,122 @@ impl ControlPlane {
             env.storage().instance().set(&param.0, &param.1);
         }
         increment_param_count(&env);
+    }
+
+    // =========================================================================
+    // Emergency Recovery (issue #178)
+    // =========================================================================
+
+    /// Initialize the emergency recovery module with authorized admins and threshold.
+    pub fn init_recovery(env: Env, caller: Address, admins: Vec<Address>, threshold: u32) {
+        crate::non_reentrant!(&env);
+        require_admin(&env, &caller);
+        crate::emergency_recovery::init(&env, admins, threshold);
+    }
+
+    /// Request an emergency fund recovery transfer.
+    ///
+    /// The requester must be an authorized emergency recovery admin.
+    pub fn request_recovery(
+        env: Env,
+        requester: Address,
+        token: Address,
+        dest: Address,
+        amount: i128,
+    ) {
+        crate::emergency_recovery::request(&env, &requester, &token, &dest, amount);
+    }
+
+    /// Approve a pending emergency recovery request.
+    ///
+    /// The admin must be an authorized emergency recovery admin.
+    pub fn approve_recovery(env: Env, admin: Address) {
+        crate::emergency_recovery::approve(&env, &admin);
+    }
+
+    /// View pending emergency recovery approvals.
+    pub fn pending_recovery_approvals(env: Env) -> Vec<Address> {
+        crate::emergency_recovery::pending_approvals(&env)
+    }
+
+    // =========================================================================
+    // Treasury & Outflow Time-locking (issue #178)
+    // =========================================================================
+
+    /// Initialize the treasury module with an administrator.
+    pub fn init_treasury(env: Env, caller: Address, admin: Address) {
+        crate::non_reentrant!(&env);
+        require_admin(&env, &caller);
+        crate::treasury::init(&env, admin);
+    }
+
+    /// Queue a treasury outflow behind the mandatory 24-hour time-lock.
+    pub fn schedule_outflow(env: Env, caller: Address, outflow_id: u64, amount: i128) -> u64 {
+        crate::treasury::schedule_outflow(&env, &caller, outflow_id, amount)
+    }
+
+    /// Execute a timelocked treasury outflow once its time-lock has expired.
+    pub fn execute_outflow(env: Env, caller: Address, outflow_id: u64) -> TimelockedOutflow {
+        crate::treasury::execute_outflow(&env, &caller, outflow_id)
+    }
+
+    /// Record a treasury state snapshot.
+    pub fn record_snapshot(
+        env: Env,
+        caller: Address,
+        total_balance: i128,
+        account_count: u32,
+        trigger: TriggerKind,
+        context: Map<Symbol, Val>,
+    ) -> u64 {
+        crate::treasury::record_snapshot(
+            &env,
+            &caller,
+            total_balance,
+            account_count,
+            trigger,
+            context,
+        )
+    }
+
+    /// Retrieve a scheduled outflow by id.
+    pub fn get_outflow(env: Env, outflow_id: u64) -> Option<TimelockedOutflow> {
+        crate::treasury::get_outflow(&env, outflow_id)
+    }
+
+    /// Retrieve a recorded snapshot by id.
+    pub fn get_snapshot(env: Env, snapshot_id: u64) -> Option<TreasurySnapshot> {
+        crate::treasury::get_snapshot(&env, snapshot_id)
+    }
+
+    /// Retrieve the latest recorded snapshot.
+    pub fn get_latest_snapshot(env: Env) -> Option<TreasurySnapshot> {
+        crate::treasury::get_latest_snapshot(&env)
+    }
+
+    // =========================================================================
+    // Burn Safety (issue #178)
+    // =========================================================================
+
+    /// Burn-safe transfer wrapper validating recipient and amount before emitting.
+    pub fn burn_to(env: Env, caller: Address, to: Address, amount: i128) {
+        crate::non_reentrant!(&env);
+        require_admin(&env, &caller);
+        crate::burn::burn_to(&env, &to, amount);
+    }
+
+    /// Preflight check rejecting the Stellar zero address.
+    pub fn reject_zero_address(env: Env, to: Address) {
+        crate::burn::reject_zero_address(&env, &to);
+    }
+
+    // =========================================================================
+    // Governed Contract Upgrade (issue #178)
+    // =========================================================================
+
+    /// Governed contract upgrade executing upon proposal approval.
+    pub fn governed_upgrade(env: Env, proposal_id: u64, new_wasm_hash: BytesN<32>) {
+        crate::upgrade::upgrade(&env, proposal_id, new_wasm_hash);
     }
 }
 

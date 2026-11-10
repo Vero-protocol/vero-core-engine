@@ -1,26 +1,28 @@
-use soroban_sdk::{contracterror, panic_with_error, symbol_short, vec, Address, BytesN, Env, Symbol, Vec};
-use crate::event_struct::{MOD_CORE, ACT_INIT};
+use crate::event_struct::{ACT_INIT, MOD_CORE};
 use crate::event_utils::publish_event;
+use soroban_sdk::{
+    contracterror, panic_with_error, symbol_short, vec, Address, BytesN, Env, Symbol, Vec,
+};
 
-const KEY_INIT:     Symbol = symbol_short!("C_INIT");
-const KEY_ADMIN:    Symbol = symbol_short!("C_ADMIN");
+const KEY_INIT: Symbol = symbol_short!("C_INIT");
+const KEY_ADMIN: Symbol = symbol_short!("C_ADMIN");
 const KEY_OPERATRS: Symbol = symbol_short!("C_OPERS");
 const KEY_AUDITORS: Symbol = symbol_short!("C_AUDIT");
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum AccessError {
-    Unauthorized      = 1,
-    AlreadyInit       = 2,
-    NotInitialized    = 3,
-    InvalidAdmin      = 4,
-    InvalidOperator   = 5,
-    InvalidAuditor    = 6,
+    Unauthorized = 1,
+    AlreadyInit = 2,
+    NotInitialized = 3,
+    InvalidAdmin = 4,
+    InvalidOperator = 5,
+    InvalidAuditor = 6,
 }
 
-pub const ROLE_ADMIN:    u32 = 0;
+pub const ROLE_ADMIN: u32 = 0;
 pub const ROLE_OPERATOR: u32 = 1;
-pub const ROLE_AUDITOR:  u32 = 2;
+pub const ROLE_AUDITOR: u32 = 2;
 
 pub fn initialize(env: &Env, admin: &Address, operators: Vec<Address>, auditors: Vec<Address>) {
     if is_initialized(env) {
@@ -68,17 +70,26 @@ pub fn require_role(env: &Env, caller: &Address, role: u32) {
 
     let ok = match role {
         ROLE_ADMIN => {
-            let admin: Address = env.storage().instance().get(&KEY_ADMIN)
+            let admin: Address = env
+                .storage()
+                .instance()
+                .get(&KEY_ADMIN)
                 .unwrap_or_else(|| panic_with_error!(env, AccessError::NotInitialized));
             admin == caller.clone()
         }
         ROLE_OPERATOR => {
-            let operators: Vec<Address> = env.storage().instance().get(&KEY_OPERATRS)
+            let operators: Vec<Address> = env
+                .storage()
+                .instance()
+                .get(&KEY_OPERATRS)
                 .unwrap_or_else(|| vec![env]);
             operators.contains(caller)
         }
         ROLE_AUDITOR => {
-            let auditors: Vec<Address> = env.storage().instance().get(&KEY_AUDITORS)
+            let auditors: Vec<Address> = env
+                .storage()
+                .instance()
+                .get(&KEY_AUDITORS)
                 .unwrap_or_else(|| vec![env]);
             auditors.contains(caller)
         }
@@ -95,11 +106,17 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 }
 
 pub fn get_operators(env: &Env) -> Vec<Address> {
-    env.storage().instance().get(&KEY_OPERATRS).unwrap_or(vec![env])
+    env.storage()
+        .instance()
+        .get(&KEY_OPERATRS)
+        .unwrap_or(vec![env])
 }
 
 pub fn get_auditors(env: &Env) -> Vec<Address> {
-    env.storage().instance().get(&KEY_AUDITORS).unwrap_or(vec![env])
+    env.storage()
+        .instance()
+        .get(&KEY_AUDITORS)
+        .unwrap_or(vec![env])
 }
 
 #[cfg(test)]
